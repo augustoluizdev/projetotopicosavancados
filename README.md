@@ -1,91 +1,123 @@
-# Event Management System
+---
 
-A Django-based event management system built with Clean Architecture principles.
+# Sistema de Gerenciamento de Eventos
 
-## Architecture
+Um sistema de gerenciamento de eventos baseado em **Django**, construído seguindo os princípios da **Clean Architecture**.
 
-This project follows Clean Architecture with the following layers:
+---
 
-- **Domain**: Core business entities and rules
-- **Application**: Use cases and business logic
-- **Infrastructure**: External concerns (database, frameworks)
-- **Presentation**: API and user interfaces
+# Arquitetura
 
-## Features
+Este projeto segue a **Clean Architecture** com as seguintes camadas:
 
-- Create and manage events
-- Register participants for events
-- List events and participants
-- Event status management (Draft, Published, Cancelled, Completed)
+* **Domain (Domínio)**: Entidades principais do negócio e regras de negócio
+* **Application (Aplicação)**: Casos de uso e lógica da aplicação
+* **Infrastructure (Infraestrutura)**: Elementos externos (banco de dados, frameworks, etc.)
+* **Presentation (Apresentação)**: API e interfaces de usuário
 
-## Project Structure
+---
+
+# Funcionalidades
+
+* Criar e gerenciar eventos
+* Registrar participantes em eventos
+* Listar eventos e participantes
+* Gerenciar o status dos eventos (Rascunho, Publicado, Cancelado, Concluído)
+
+---
+
+# Estrutura do Projeto
 
 ```
 ├── src/
-│   ├── domain/                 # Domain layer
-│   │   ├── entities/          # Business entities
-│   │   ├── value_objects/     # Value objects
-│   │   └── exceptions/        # Domain exceptions
-│   ├── application/           # Application layer
-│   │   ├── dto/              # Data transfer objects
-│   │   ├── ports/            # Abstract interfaces
-│   │   └── use_cases/        # Business use cases
-│   ├── infrastructure/        # Infrastructure layer
-│   │   ├── django_app/       # Django models and admin
-│   │   ├── repositories/     # Repository implementations
-│   │   └── config/           # Dependency injection
-│   └── presentation/         # Presentation layer
-│       └── api/              # REST API
-├── tests/                     # Test suite
-├── config/                    # Django configuration
-├── manage.py                  # Django management script
-└── pyproject.toml            # Project dependencies
+│   ├── domain/                 # Camada de Domínio
+│   │   ├── entities/          # Entidades de negócio
+│   │   ├── value_objects/     # Objetos de valor
+│   │   └── exceptions/        # Exceções do domínio
+│
+│   ├── application/           # Camada de Aplicação
+│   │   ├── dto/              # Objetos de transferência de dados
+│   │   ├── ports/            # Interfaces abstratas
+│   │   └── use_cases/        # Casos de uso do negócio
+│
+│   ├── infrastructure/        # Camada de Infraestrutura
+│   │   ├── django_app/       # Models e admin do Django
+│   │   ├── repositories/     # Implementações de repositórios
+│   │   └── config/           # Injeção de dependências
+│
+│   └── presentation/         # Camada de Apresentação
+│       └── api/              # API REST
+│
+├── tests/                     # Testes do projeto
+├── config/                    # Configurações do Django
+├── manage.py                  # Script de gerenciamento do Django
+└── pyproject.toml             # Dependências do projeto
 ```
 
-## Setup
+---
 
-1. Install dependencies:
+# Configuração (Setup)
+
+### 1️⃣ Instalar dependências
+
 ```bash
 pip install -e .
 ```
 
-2. Run migrations:
+### 2️⃣ Executar as migrações do banco de dados
+
 ```bash
 python manage.py migrate
 ```
 
-3. Run the development server:
+### 3️⃣ Rodar o servidor de desenvolvimento
+
 ```bash
 python manage.py runserver
 ```
 
-## API Endpoints
+---
 
-### Events
-- `GET /api/events/` - List all events
-- `POST /api/events/create/` - Create a new event
-- `GET /api/events/{id}/` - Get event details
+# Endpoints da API
 
-### Participants
-- `POST /api/participants/register/` - Register for an event
-- `GET /api/events/{id}/participants/` - List event participants
+## Eventos
 
-## Testing
+* `GET /api/events/` → Listar todos os eventos
+* `POST /api/events/create/` → Criar um novo evento
+* `GET /api/events/{id}/` → Obter detalhes de um evento
 
-Run tests with:
+---
+
+## Participantes
+
+* `POST /api/participants/register/` → Registrar participação em um evento
+* `GET /api/events/{id}/participants/` → Listar participantes de um evento
+
+---
+
+# Testes
+
+Para executar os testes:
+
 ```bash
 pytest
 ```
 
-## Development
+---
 
-This project follows Clean Architecture principles:
+# Desenvolvimento
 
-- **Dependency Rule**: Inner layers don't depend on outer layers
-- **Abstraction**: Interfaces define contracts between layers
-- **Dependency Injection**: Dependencies are injected, not hardcoded
-- **Single Responsibility**: Each class has one reason to change
+Este projeto segue os princípios da **Clean Architecture**:
 
-## License
+* **Regra de Dependência**: Camadas internas não dependem de camadas externas
+* **Abstração**: Interfaces definem contratos entre as camadas
+* **Injeção de Dependência**: Dependências são injetadas, não codificadas diretamente
+* **Responsabilidade Única**: Cada classe tem apenas uma responsabilidade
 
-MIT License
+---
+
+# Licença
+
+Licença MIT
+
+---
