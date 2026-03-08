@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "event-manager"
+version = "0.1.0"
+description = "Event Management System with Clean Architecture"
+authors = [
+    {name = "Developer", email = "dev@example.com"}
+]
+dependencies = [
+    "Django>=4.2",
+    "djangorestframework>=3.14",
+    "pytest>=7.0",
+    "pytest-django>=4.5",
+]
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.django]
+settings_module = "config.settings"
