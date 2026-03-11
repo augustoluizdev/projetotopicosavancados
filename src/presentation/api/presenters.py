@@ -28,6 +28,22 @@ class JSONEventPresenter(EventPresenter):
             }
         }
 
+class JSONParticipantPresenter:
+    """JSON presenter for participant responses."""
+
+    def present_participant(self, participant_dto) -> dict:
+        """Present a participant as JSON."""
+        return {
+            'success': True,
+            'data': {
+                'id': participant_dto.id,
+                'name': participant_dto.name,
+                'email': participant_dto.email,
+                'created_at': participant_dto.created_at,
+                'updated_at': participant_dto.updated_at,
+            }
+        }
+    
     def present_events(self, event_dtos: List[EventSummaryDTO]) -> dict:
         """Present a list of events as JSON."""
         return {

@@ -6,7 +6,7 @@ from typing import List, Optional
 from src.application.ports.repositories import ParticipantRepository
 from src.domain.entities.participant import Participant
 
-from .models.models import ParticipantModel, EventParticipantModel
+from src.infrastructure.django_app.models.models import ParticipantModel, EventParticipantModel
 
 
 class DjangoParticipantRepository(ParticipantRepository):

@@ -9,7 +9,7 @@ from src.domain.entities.event import Event
 from src.domain.entities.participant import Participant
 from src.domain.value_objects.event_status import EventStatus
 
-from .models.models import EventModel, ParticipantModel, EventParticipantModel
+from src.infrastructure.django_app.models.models import EventModel, ParticipantModel, EventParticipantModel
 
 
 class DjangoEventRepository(EventRepository):
