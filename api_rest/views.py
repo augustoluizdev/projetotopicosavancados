@@ -126,10 +126,30 @@ def user_manager(request):
         except :
             return Response(status-status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+def register(request):
+    serializer = UserSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        data = serializer.data
+        data.pop('password', None)  # Remove a senha do retorno
+        return Response(data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-
-
+@api_view(['POST'])
+def login(request):
+    nick = request.data.get('user_nickname')
+    pwd = request.data.get('password')
+    if not nick or not pwd:
+        return Response({'error': 'Nickname e senha são obrigatórios.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(pk=nick)
+    except User.DoesNotExist:
+        return Response({'error': 'Usuário não encontrado.'}, status=status.HTTP_404_NOT_FOUND)    
+    if not user.check_password(pwd):
+        return Response({'error': 'Senha incorreta.'}, status=status.HTTP_400_BAD_REQUEST)
+    data = {'user_nickname':user.user_nickname, 'user_name': user.user_name, 'user_email': user.user_email}
+    return Response(data)
 
 
 
