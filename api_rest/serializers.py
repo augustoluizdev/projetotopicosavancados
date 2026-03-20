@@ -4,6 +4,8 @@ from rest_framework import serializers
 
 from .models import User
 
+from .models import Event
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -26,3 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
             instance.set_password(pwd)
         instance.save()
         return instance    
+class EventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Event
+        fields = '__all__'

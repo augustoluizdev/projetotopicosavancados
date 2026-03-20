@@ -19,3 +19,14 @@ class User(models.Model):
 
     def __str__(self):
         return f'Nickname: {self.user_nickname} - Name: {self.user_name} - Email: {self.user_email} - Age: {self.user_age}'
+    
+class Event(models.Model):
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    date = models.DateTimeField()
+    location = models.CharField(max_length=255)
+    address = models.CharField(max_length=255)
+    max_participants = models.IntegerField()
+
+    def __str__(self):
+        return self.title

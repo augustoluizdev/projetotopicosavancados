@@ -12,8 +12,15 @@ from rest_framework import status
 from .models import User
 from .serializers import UserSerializer
 
+from rest_framework import viewsets
+from .models import Event
+from .serializers import EventSerializer
+
 import json
 
+class EventViewSet(viewsets.ModelViewSet):
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
 # Aqui ficam as views da nossa API. As views são responsáveis por receber as requisições, processá-las e retornar uma resposta. Elas são o coração da nossa API, onde a lógica de negócio é implementada.
 
 @api_view(['GET'])
