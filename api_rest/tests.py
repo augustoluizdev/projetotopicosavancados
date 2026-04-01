@@ -6,6 +6,7 @@ from rest_framework.test import APITestCase
 from django.urls import reverse
 
 # Aqui ficam os testes da nossa API. Os testes são importantes para garantir que a nossa API está funcionando corretamente e para evitar regressões no futuro. Eles são uma parte fundamental do desenvolvimento de software de qualidade.
+
 class UserModelTests(TestCase):
     def test_set_and_check_password(self):
         u = User(user_nickname='nick1', user_name='Name', user_email='a@b.com', user_age=30)
