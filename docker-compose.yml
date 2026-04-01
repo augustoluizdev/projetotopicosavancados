@@ -1,0 +1,123 @@
+# ============================================================
+# docker-compose.yml - Orquestracao dos containers
+# ============================================================
+#
+# Este arquivo define todos os servicos (containers) que o
+# projeto precisa para funcionar. Com um unico comando
+# (`docker-compose up --build`) tudo e iniciado automaticamente.
+#
+# Servicos:
+#   - db:  PostgreSQL 16 (banco de dados)
+#   - web: Django (backend da API)
+#
+# Infraestrutura:
+#   - postgres_data: volume persistente para o banco
+#   - app_network: rede interna entre os containers
+# ============================================================
+
+services:
+
+  # ============================================================
+  # SERVICO: Banco de Dados (PostgreSQL 16)
+  # ============================================================
+  db:
+    # Imagem oficial do PostgreSQL 16 na versao Alpine
+    # Alpine = versao menor da imagem (~50MB vs ~300MB)
+    image: postgres:16-alpine
+
+    # Variaveis de ambiente do PostgreSQL
+    # O .env do projeto e lido pelo servico web, mas o
+    # docker-compose.yml tambem precisa desses valores para
+    # criar o banco quando o container inicia
+    environment:
+      POSTGRES_DB: ${DB_NAME}        # Nome do banco a ser criado
+      POSTGRES_USER: ${DB_USER}      # Usuario padrao do PostgreSQL
+      POSTGRES_PASSWORD: ${DB_PASSWORD}  # Senha do usuario
+
+    # Mapeamento de portas: porta_do_host:porta_do_container
+    # 5432:5432 = acesso local ao PostgreSQL (para debug/ferramentas)
+    ports:
+      - "5432:5432"
+
+    # Volume persistente: os dados do banco ficam salvos aqui
+    # mesmo depois de parar os containers (`docker-compose down`)
+    # Sem isso, todos os dados seriam perdidos ao parar
+    # postgres_data e o nome logico do volume (gerenciado pelo Docker)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # Rede interna: permite que o container web acesse este
+    # container pelo hostname "db" (configurado no settings.py
+    # como DB_HOST=db)
+    networks:
+      - app_network
+
+    # Healthcheck: verifica se o PostgreSQL esta pronto
+    # O servico web so inicia DEPOIS que o healthcheck passar
+    # Isso evita o erro "connection refused" do Django ao tentar
+    # conectar com um banco que ainda nao subiu
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s    # Tenta a cada 5 segundos
+      timeout: 5s     # Timeout de cada tentativa
+      retries: 5      # Tenta 5 vezes antes de falhar
+
+  # ============================================================
+  # SERVICO: Backend Django (API REST)
+  # ============================================================
+  web:
+    # Constroi a imagem a partir do Dockerfile na pasta atual
+    # Isso instala Python, Django e todas as dependencias
+    build: .
+
+    # Comando executado apos o entrypoint.sh terminar
+    # 0.0.0.0 = escuta em todas as interfaces de rede do container
+    # (nao usar 127.0.0.1 senao so aceitaria conexoes internas)
+    command: python manage.py runserver 0.0.0.0:8000
+
+    # Volume de desenvolvimento: mapeia a pasta local para /app
+    # Isso permite editar o codigo no host e ver as mudancas
+    # instantaneamente no container (hot reload do Django)
+    volumes:
+      - .:/app
+
+    # Mapeamento de portas: porta_do_host:porta_do_container
+    # 8000:8000 = acesso via http://localhost:8000
+    ports:
+      - "8000:8000"
+
+    # Carrega variaveis de ambiente do arquivo .env
+    # O Django le essas variaveis em settings.py via os.environ
+    env_file:
+      - .env
+
+    # Dependencias: garante que o banco suba ANTES do Django
+    # condition: service_healthy = espera o healthcheck do db passar
+    # Sem isso, o Django tenta conectar e falha com "connection refused"
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Conecta na mesma rede do banco para comunicacao interna
+    networks:
+      - app_network
+
+# ============================================================
+# VOLUMES: Armazenamento persistente
+# ============================================================
+# O Docker gerencia esse volume automaticamente
+# Ele sobrevive a `docker-compose down` (mas nao a `down -v`)
+# Para ver os volumes: docker volume ls
+# Para remover: docker volume rm projetotopicosavancados_postgres_data
+volumes:
+  postgres_data:
+
+# ============================================================
+# NETWORKS: Rede interna entre containers
+# ============================================================
+# bridge = rede padrao do Docker para comunicacao entre containers
+# Os containers se comunicam pelo nome do servico (db, web)
+# Ex: o Django acessa o PostgreSQL em "db:5432"
+networks:
+  app_network:
+    driver: bridge

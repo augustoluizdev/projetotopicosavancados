@@ -1,1 +1,11 @@
 venv/
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+.env
+*.log
+staticfiles/
+.idea/
+.vscode/
+*.sqlite3
