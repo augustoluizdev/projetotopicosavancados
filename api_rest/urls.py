@@ -1,15 +1,13 @@
-from django.contrib import admin
 from django.urls import path, include
-
 from rest_framework.routers import DefaultRouter
-from .views import EventViewSet
-
-from . import views
+from .views import EventViewSet, UserViewSet, RegisterView, LoginView
 
 router = DefaultRouter()
 router.register(r'events', EventViewSet)
+router.register(r'users', UserViewSet, basename='users')
 
 urlpatterns = [
+<<<<<<< Updated upstream
     path('', views.get_users, name='get_all_users'),
     path('auth/register/', views.register, name='register'),
     path('auth/login/', views.login),
@@ -20,4 +18,9 @@ urlpatterns = [
     path('cart/<str:nick>/checkout/', views.checkout_cart, name='checkout_cart'),
     path('orders/<str:nick>/', views.list_orders, name='list_orders'),
     path('', include(router.urls))
+=======
+    path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/login/', LoginView.as_view(), name='login'),
+    path('', include(router.urls)),
+>>>>>>> Stashed changes
 ]
