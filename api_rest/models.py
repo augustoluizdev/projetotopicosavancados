@@ -30,3 +30,58 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def sold_tickets(self):
+        sold = (
+            self.order_items.filter(order__status=Order.Status.REQUESTED)
+            .aggregate(total=models.Sum('quantity'))
+            .get('total')
+        )
+        return sold or 0
+
+    @property
+    def available_tickets(self):
+        return self.max_participants - self.sold_tickets
+
+
+class Cart(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='cart')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Carrinho de {self.user.user_nickname}'
+
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='cart_items')
+    quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        unique_together = ('cart', 'event')
+
+    def __str__(self):
+        return f'{self.quantity}x {self.event.title}'
+
+
+class Order(models.Model):
+    class Status(models.TextChoices):
+        REQUESTED = 'requested', 'Requested'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.REQUESTED)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Pedido #{self.pk} - {self.user.user_nickname}'
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    event = models.ForeignKey(Event, on_delete=models.PROTECT, related_name='order_items')
+    quantity = models.PositiveIntegerField()
+
+    def __str__(self):
+        return f'{self.quantity}x {self.event.title}'
