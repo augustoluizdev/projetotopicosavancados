@@ -1,11 +1,12 @@
 from django.contrib import admin
 
-# Aqui registramos os modelos no admin do Django.
+from .models import Cart, CartItem, Event, Order, OrderItem, User
 
-from .models import User
 
+# Registro dos modelos para facilitar consulta e manutencao pelo painel admin.
 admin.site.register(User)
-
-from .models import Event
-
 admin.site.register(Event)
+admin.site.register(Cart)
+admin.site.register(CartItem)
+admin.site.register(Order)
+admin.site.register(OrderItem)

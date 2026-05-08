@@ -1,1 +1,8 @@
 venv/
+.env
+db.sqlite3
+__pycache__/
+*.py[cod]
+
+# Repositório Git interno adicionado sem querer
+projetotopicosavancados/

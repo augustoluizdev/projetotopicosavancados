@@ -1,34 +1,104 @@
-# Aqui definimos os serializers, que são responsáveis por converter os objetos do modelo em formatos que podem ser facilmente renderizados em JSON, XML, etc. Eles também são usados para validar os dados de entrada.
-
 from rest_framework import serializers
 
-from .models import User
+from .models import Cart, CartItem, Event, Order, OrderItem, User
 
-from .models import Event
 
 class UserSerializer(serializers.ModelSerializer):
+    # A senha entra na criacao/edicao, mas nunca volta nas respostas da API.
+    password = serializers.CharField(write_only=True, required=False, min_length=6)
+
     class Meta:
         model = User
         fields = ['user_nickname', 'user_name', 'user_email', 'user_age', 'password']
-        extra_kwards = {'password': {'write_only': True}}
+        extra_kwargs = {
+            'password': {'write_only': True},
+        }
+
+    def validate_user_age(self, value):
+        if value < 0:
+            raise serializers.ValidationError('A idade deve ser um numero positivo.')
+        return value
 
     def create(self, validated_data):
-        pwd = validated_data.pop('password', None)
+        # Cria o usuario com senha criptografada.
+        password = validated_data.pop('password', None)
+        if not password:
+            raise serializers.ValidationError({'password': 'A senha e obrigatoria.'})
         user = User(**validated_data)
-        if pwd:
-            user.set_password(pwd)
+        user.set_password(password)
         user.save()
         return user
-    
+
     def update(self, instance, validated_data):
-        pwd = validated_data.pop('password', None)
-        for k,v in validated_data.items():
-            setattr(instance, k, v)
-        if pwd:
-            instance.set_password(pwd)
+        # Atualiza campos simples e troca a senha somente quando ela for enviada.
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
         instance.save()
-        return instance    
+        return instance
+
+
 class EventSerializer(serializers.ModelSerializer):
+    # Campos calculados ajudam o front a mostrar disponibilidade sem nova chamada.
+    sold_tickets = serializers.IntegerField(read_only=True)
+    available_tickets = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Event
         fields = '__all__'
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    # Na leitura mostramos o evento completo; na escrita recebemos apenas o id.
+    event = EventSerializer(read_only=True)
+    event_id = serializers.PrimaryKeyRelatedField(
+        source='event',
+        queryset=Event.objects.all(),
+        write_only=True,
+    )
+
+    class Meta:
+        model = CartItem
+        fields = ['id', 'event', 'event_id', 'quantity']
+
+
+class CartSerializer(serializers.ModelSerializer):
+    # Retorna o carrinho com os itens ja detalhados.
+    items = CartItemSerializer(many=True, read_only=True)
+    user_nickname = serializers.CharField(source='user.user_nickname', read_only=True)
+
+    class Meta:
+        model = Cart
+        fields = ['id', 'user_nickname', 'items', 'created_at', 'updated_at']
+
+
+class AddCartItemSerializer(serializers.Serializer):
+    # Valida o corpo usado para adicionar ingressos ao carrinho.
+    event_id = serializers.PrimaryKeyRelatedField(queryset=Event.objects.all(), source='event')
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class UpdateCartItemSerializer(serializers.Serializer):
+    # Valida o corpo usado para alterar a quantidade de um item.
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    # Item do pedido sempre sai com o evento completo para facilitar a tela de historico.
+    event = EventSerializer(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'event', 'quantity']
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    # Pedido com os itens comprados e o nickname de quem comprou.
+    items = OrderItemSerializer(many=True, read_only=True)
+    user_nickname = serializers.CharField(source='user.user_nickname', read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ['id', 'user_nickname', 'status', 'items', 'created_at']
