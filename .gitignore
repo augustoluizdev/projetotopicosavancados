@@ -1,8 +1,28 @@
+# Ambiente virtual Python
 venv/
+
+# Variáveis de ambiente / dados sensíveis
 .env
+
+# Banco local
 db.sqlite3
+*.sqlite3
+
+# Cache e arquivos compilados Python
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# Arquivos gerados em produção/collectstatic
+staticfiles/
+
+# Configurações locais de editores
+.idea/
+.vscode/
 
 # Repositório Git interno adicionado sem querer
 projetotopicosavancados/
