@@ -1,3 +1,5 @@
+import logging
+
 from django.db import transaction
 from django.db.models import Sum
 from rest_framework import status, viewsets
@@ -7,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Cart, CartItem, Event, Order, OrderItem, User
+from .order_events import build_order_created_event
+from .rabbitmq import publish_order_created_event
 from .serializers import (
     AddCartItemSerializer,
     CartSerializer,
@@ -15,6 +19,8 @@ from .serializers import (
     UpdateCartItemSerializer,
     UserSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -239,6 +245,8 @@ def checkout_cart(request, nick):
             ]
         )
         cart.items.all().delete()
+        order_event = build_order_created_event(order)
+        transaction.on_commit(lambda: _publish_order_created_event(order_event))
 
     return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
@@ -252,3 +260,13 @@ def list_orders(request, nick):
 
     orders = user.orders.prefetch_related('items__event').order_by('-created_at')
     return Response(OrderSerializer(orders, many=True).data)
+
+
+def _publish_order_created_event(order_event):
+    try:
+        publish_order_created_event(order_event)
+    except Exception:
+        logger.exception(
+            'Failed to publish OrderCreatedEvent for order %s',
+            order_event.order_id,
+        )

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
@@ -6,6 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import Cart, Event, Order, User
+from .order_events import build_order_created_event
 
 
 # Testes dos modelos: validam regras basicas antes de testar a API.
@@ -264,6 +266,33 @@ class TicketPurchaseFlowTests(APITestCase):
         self.assertEqual(orders_response.status_code, 200)
         self.assertEqual(len(orders_response.data), 1)
 
+    @patch('api_rest.views.publish_order_created_event')
+    def test_checkout_publishes_order_created_event_after_commit(self, publish_order_created_event):
+        add_url = reverse('add_to_cart', kwargs={'nick': self.user.user_nickname})
+        checkout_url = reverse('checkout_cart', kwargs={'nick': self.user.user_nickname})
+
+        add_response = self.client.post(
+            add_url,
+            {'event_id': self.event.id, 'quantity': 2},
+            format='json',
+        )
+        self.assertEqual(add_response.status_code, 201)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            checkout_response = self.client.post(checkout_url, {}, format='json')
+
+        self.assertEqual(checkout_response.status_code, 201)
+        publish_order_created_event.assert_called_once()
+
+        published_event = publish_order_created_event.call_args.args[0]
+        self.assertEqual(published_event.order_id, checkout_response.data['id'])
+        self.assertEqual(published_event.user_nickname, self.user.user_nickname)
+        self.assertEqual(published_event.user_email, self.user.user_email)
+        self.assertEqual(len(published_event.items), 1)
+        self.assertEqual(published_event.items[0].event_id, self.event.id)
+        self.assertEqual(published_event.items[0].title, self.event.title)
+        self.assertEqual(published_event.items[0].quantity, 2)
+
     def test_cannot_add_more_tickets_than_capacity(self):
         add_url = reverse('add_to_cart', kwargs={'nick': self.user.user_nickname})
         response = self.client.post(
@@ -281,3 +310,34 @@ class TicketPurchaseFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'O carrinho esta vazio.')
+
+
+class OrderCreatedEventTests(TestCase):
+    def test_build_order_created_event_from_order(self):
+        user = User.objects.create(
+            user_nickname='eventbuyer',
+            user_name='Event Buyer',
+            user_email='eventbuyer@example.com',
+            user_age=28,
+            password='hashed-password',
+        )
+        event = Event.objects.create(
+            title='Backend Summit',
+            description='Evento para testar payload de mensageria',
+            date=timezone.now() + timedelta(days=7),
+            location='Centro de Eventos',
+            address='Rua B, 200',
+            max_participants=50,
+        )
+        order = Order.objects.create(user=user)
+        order.items.create(event=event, quantity=3)
+
+        order_event = build_order_created_event(order)
+
+        self.assertEqual(order_event.order_id, order.id)
+        self.assertEqual(order_event.user_nickname, user.user_nickname)
+        self.assertEqual(order_event.user_email, user.user_email)
+        self.assertEqual(len(order_event.items), 1)
+        self.assertEqual(order_event.items[0].event_id, event.id)
+        self.assertEqual(order_event.items[0].title, event.title)
+        self.assertEqual(order_event.items[0].quantity, 3)

@@ -124,3 +124,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
     "http://localhost:3000",
 ]
+
+RABBITMQ = {
+    'HOST': os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
+    'PORT': int(os.environ.get('RABBITMQ_PORT', '5672')),
+    'USER': os.environ.get('RABBITMQ_USER', 'guest'),
+    'PASSWORD': os.environ.get('RABBITMQ_PASSWORD', 'guest'),
+    'ORDER_CREATED_EXCHANGE': os.environ.get('RABBITMQ_ORDER_CREATED_EXCHANGE', 'orders'),
+    'ORDER_CREATED_ROUTING_KEY': os.environ.get('RABBITMQ_ORDER_CREATED_ROUTING_KEY', 'order.created'),
+}

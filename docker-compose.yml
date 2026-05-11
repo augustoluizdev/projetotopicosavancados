@@ -17,6 +17,24 @@
 
 services:
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
   # ============================================================
   # SERVICO: Banco de Dados (PostgreSQL 16)
   # ============================================================
@@ -90,12 +108,19 @@ services:
     # O Django le essas variaveis em settings.py via os.environ
     env_file:
       - .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
 
     # Dependencias: garante que o banco suba ANTES do Django
     # condition: service_healthy = espera o healthcheck do db passar
     # Sem isso, o Django tenta conectar e falha com "connection refused"
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
     # Conecta na mesma rede do banco para comunicacao interna
@@ -111,6 +136,7 @@ services:
 # Para remover: docker volume rm projetotopicosavancados_postgres_data
 volumes:
   postgres_data:
+  rabbitmq_data:
 
 # ============================================================
 # NETWORKS: Rede interna entre containers
