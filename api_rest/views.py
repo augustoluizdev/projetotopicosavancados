@@ -9,8 +9,23 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
+<<<<<<< Updated upstream
 from .models import User
 from .serializers import UserSerializer
+=======
+from .models import Cart, CartItem, Event, Order, OrderItem, User
+from .serializers import (
+    AddCartItemSerializer,
+    CartSerializer,
+    EventSerializer,
+    OrderSerializer,
+    UpdateCartItemSerializer,
+    UserSerializer,
+)
+from .commands import EventCommandService
+from .read_models import EventReadModel
+from .tasks import update_event_read_model
+>>>>>>> Stashed changes
 
 from rest_framework import viewsets
 from .models import Event
@@ -19,9 +34,118 @@ from .serializers import EventSerializer
 import json
 
 class EventViewSet(viewsets.ModelViewSet):
+<<<<<<< Updated upstream
     queryset = Event.objects.all()
     serializer_class = EventSerializer
 # Aqui ficam as views da nossa API. As views são responsáveis por receber as requisições, processá-las e retornar uma resposta. Elas são o coração da nossa API, onde a lógica de negócio é implementada.
+=======
+    """ViewSet para Eventos implementando CQRS.
+    - Writes (POST, PUT, PATCH, DELETE): Command Side via EventCommandService
+    - Reads (GET): Query Side via EventReadModel (desnormalizado)
+    """
+
+    def list(self, request, *args, **kwargs):
+        """GET /api/events/ - Usa Read Model para leitura otimizada"""
+        events = EventReadModel.get_all()
+        return Response(events)
+
+    def retrieve(self, request, *args, **kwargs):
+        """GET /api/events/<id>/ - Busca no Read Model"""
+        event = EventReadModel.get_by_id(kwargs.get('pk'))
+        if not event:
+            return Response({'error': 'Evento nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(event)
+
+    def create(self, request, *args, **kwargs):
+        """POST /api/events/ - Command Side: cria via Command Service e dispara task assincrona"""
+        serializer = EventSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Command Side: salva no banco de escrita via Command Service
+        event = EventCommandService.create_event(serializer.validated_data)
+
+        # Dispara task assincrona para atualizar Read Model (CQRS + Eventual Consistency)
+        update_event_read_model.delay(event.id)
+
+        # Headers informando sobre consistencia eventual
+        headers = {
+            'X-Consistency': 'eventual',
+            'X-Read-Model-Delay': '100ms',
+            'Warning': 'Os dados podem levar alguns milissegundos para aparecer na listagem'
+        }
+
+        return Response(EventSerializer(event).data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        """PUT /api/events/<id>/ - Atualiza via Command Service"""
+        event = EventCommandService.update_event(
+            kwargs.get('pk'),
+            request.data
+        )
+        update_event_read_model.delay(event.id)
+        return Response(EventSerializer(event).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        """PATCH /api/events/<id>/"""
+        event = EventCommandService.update_event(
+            kwargs.get('pk'),
+            request.data
+        )
+        update_event_read_model.delay(event.id)
+        return Response(EventSerializer(event).data)
+
+    def destroy(self, request, *args, **kwargs):
+        """DELETE /api/events/<id>/"""
+        EventCommandService.delete_event(kwargs.get('pk'))
+        from .read_models import EventReadModel
+        EventReadModel.delete(kwargs.get('pk'))
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RegisterView(APIView):
+    # Cadastro separado para manter uma URL clara de autenticacao.
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = UserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LoginView(APIView):
+    # Login simples: valida nickname e senha e devolve os dados publicos do usuario.
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        nick = request.data.get('user_nickname')
+        password = request.data.get('password')
+
+        if not nick or not password:
+            return Response(
+                {'error': 'Nickname e senha sao obrigatorios.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = User.objects.get(pk=nick)
+        except User.DoesNotExist:
+            return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not user.check_password(password):
+            return Response({'error': 'Senha incorreta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = {
+            'user_nickname': user.user_nickname,
+            'user_name': user.user_name,
+            'user_email': user.user_email,
+            'user_age': user.user_age,
+        }
+        return Response(data, status=status.HTTP_200_OK)
+
+>>>>>>> Stashed changes
 
 @api_view(['GET'])
 def get_users(request):
