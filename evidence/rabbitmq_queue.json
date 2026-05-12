@@ -1,0 +1,7 @@
+{
+    "name":  "order.created.notifications",
+    "messages":  0,
+    "messages_ready":  0,
+    "messages_unacknowledged":  0,
+    "consumers":  1
+}

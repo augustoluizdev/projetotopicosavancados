@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import asdict, dataclass
 
 from .models import Order
@@ -14,6 +15,7 @@ class OrderItemCreatedEvent:
 
 @dataclass(frozen=True)
 class OrderCreatedEvent:
+    event_id: str
     order_id: int
     user_nickname: str
     user_email: str
@@ -35,6 +37,7 @@ def build_order_created_event(order: Order) -> OrderCreatedEvent:
     ]
 
     return OrderCreatedEvent(
+        event_id=str(uuid.uuid4()),
         order_id=order.pk,
         user_nickname=order.user.user_nickname,
         user_email=order.user.user_email,

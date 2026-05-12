@@ -132,4 +132,27 @@ RABBITMQ = {
     'PASSWORD': os.environ.get('RABBITMQ_PASSWORD', 'guest'),
     'ORDER_CREATED_EXCHANGE': os.environ.get('RABBITMQ_ORDER_CREATED_EXCHANGE', 'orders'),
     'ORDER_CREATED_ROUTING_KEY': os.environ.get('RABBITMQ_ORDER_CREATED_ROUTING_KEY', 'order.created'),
+    'ORDER_CREATED_QUEUE': os.environ.get('RABBITMQ_ORDER_CREATED_QUEUE', 'order.created.notifications'),
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'api_rest.notifications': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'api_rest.management.commands.consume_order_created': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
 }

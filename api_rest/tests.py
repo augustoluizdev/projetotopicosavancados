@@ -6,7 +6,8 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Cart, Event, Order, User
+from .models import Cart, Event, Order, ProcessedEvent, User
+from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
 
 
@@ -285,6 +286,7 @@ class TicketPurchaseFlowTests(APITestCase):
         publish_order_created_event.assert_called_once()
 
         published_event = publish_order_created_event.call_args.args[0]
+        self.assertTrue(published_event.event_id)
         self.assertEqual(published_event.order_id, checkout_response.data['id'])
         self.assertEqual(published_event.user_nickname, self.user.user_nickname)
         self.assertEqual(published_event.user_email, self.user.user_email)
@@ -334,6 +336,7 @@ class OrderCreatedEventTests(TestCase):
 
         order_event = build_order_created_event(order)
 
+        self.assertTrue(order_event.event_id)
         self.assertEqual(order_event.order_id, order.id)
         self.assertEqual(order_event.user_nickname, user.user_nickname)
         self.assertEqual(order_event.user_email, user.user_email)
@@ -341,3 +344,61 @@ class OrderCreatedEventTests(TestCase):
         self.assertEqual(order_event.items[0].event_id, event.id)
         self.assertEqual(order_event.items[0].title, event.title)
         self.assertEqual(order_event.items[0].quantity, 3)
+
+
+class NotificationProcessingTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create(
+            user_nickname='notifybuyer',
+            user_name='Notify Buyer',
+            user_email='notifybuyer@example.com',
+            user_age=31,
+            password='hashed-password',
+        )
+        self.order = Order.objects.create(user=self.user)
+
+    def test_process_order_created_payload_updates_status_and_idempotency(self):
+        payload = {
+            'event_id': 'evt-123',
+            'order_id': self.order.id,
+            'user_nickname': self.user.user_nickname,
+            'user_email': self.user.user_email,
+            'created_at': self.order.created_at.isoformat(),
+            'items': [],
+        }
+
+        with self.assertLogs('api_rest.notifications', level='INFO') as logs:
+            result = process_order_created_payload(payload)
+
+        self.assertEqual(result, Order.NotificationStatus.NOTIFICATION_SENT)
+        self.order.refresh_from_db()
+        self.assertEqual(
+            self.order.status_notificacao,
+            Order.NotificationStatus.NOTIFICATION_SENT,
+        )
+        self.assertIsNotNone(self.order.data_processamento)
+        self.assertTrue(ProcessedEvent.objects.filter(event_id='evt-123', order=self.order).exists())
+        self.assertIn('"status": "notification_sent"', logs.output[0])
+        self.assertIn(f'"order_id": {self.order.id}', logs.output[0])
+
+    def test_duplicate_payload_is_discarded(self):
+        payload = {'event_id': 'evt-duplicate', 'order_id': self.order.id}
+
+        first_result = process_order_created_payload(payload)
+        second_result = process_order_created_payload(payload)
+
+        self.assertEqual(first_result, Order.NotificationStatus.NOTIFICATION_SENT)
+        self.assertEqual(second_result, 'duplicate_discarded')
+        self.assertEqual(ProcessedEvent.objects.filter(event_id='evt-duplicate').count(), 1)
+
+    def test_order_status_endpoint(self):
+        self.order.status_notificacao = Order.NotificationStatus.NOTIFICATION_SENT
+        self.order.data_processamento = timezone.now()
+        self.order.save(update_fields=['status_notificacao', 'data_processamento'])
+
+        response = self.client.get(reverse('order_status', kwargs={'order_id': self.order.id}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['id'], self.order.id)
+        self.assertEqual(response.data['user_id'], self.user.user_nickname)
+        self.assertEqual(response.data['status_notificacao'], 'notification_sent')

@@ -20,6 +20,7 @@ class RabbitMQPublisher:
         self.password = rabbitmq['PASSWORD']
         self.exchange = rabbitmq['ORDER_CREATED_EXCHANGE']
         self.routing_key = rabbitmq['ORDER_CREATED_ROUTING_KEY']
+        self.queue = rabbitmq['ORDER_CREATED_QUEUE']
 
     def publish_order_created(self, event: OrderCreatedEvent) -> None:
         credentials = pika.PlainCredentials(self.user, self.password)
@@ -37,6 +38,8 @@ class RabbitMQPublisher:
                 exchange_type='fanout',
                 durable=True,
             )
+            channel.queue_declare(queue=self.queue, durable=True)
+            channel.queue_bind(exchange=self.exchange, queue=self.queue)
             channel.basic_publish(
                 exchange=self.exchange,
                 routing_key=self.routing_key,

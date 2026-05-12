@@ -127,6 +127,27 @@ services:
     networks:
       - app_network
 
+  worker:
+    build: .
+    entrypoint: python
+    command: manage.py consume_order_created
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app_network
+
 # ============================================================
 # VOLUMES: Armazenamento persistente
 # ============================================================

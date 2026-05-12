@@ -24,6 +24,7 @@ urlpatterns = [
     path('cart/<str:nick>/items/', views.add_to_cart, name='add_to_cart'),
     path('cart/<str:nick>/items/<int:item_id>/', views.cart_item_detail, name='cart_item_detail'),
     path('cart/<str:nick>/checkout/', views.checkout_cart, name='checkout_cart'),
+    path('orders/<int:order_id>/status/', views.order_status, name='order_status'),
     path('orders/<str:nick>/', views.list_orders, name='list_orders'),
 
     # Rotas REST principais: /users/, /events/ e seus detalhes.

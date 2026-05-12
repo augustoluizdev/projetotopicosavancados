@@ -101,4 +101,20 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'user_nickname', 'status', 'items', 'created_at']
+        fields = [
+            'id',
+            'user_nickname',
+            'status',
+            'status_notificacao',
+            'data_processamento',
+            'items',
+            'created_at',
+        ]
+
+
+class OrderStatusSerializer(serializers.ModelSerializer):
+    user_id = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ['id', 'user_id', 'status_notificacao', 'data_processamento']

@@ -79,8 +79,18 @@ class Order(models.Model):
     class Status(models.TextChoices):
         REQUESTED = 'requested', 'Requested'
 
+    class NotificationStatus(models.TextChoices):
+        REQUESTED = 'requested', 'Requested'
+        NOTIFICATION_SENT = 'notification_sent', 'Notification sent'
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.REQUESTED)
+    status_notificacao = models.CharField(
+        max_length=30,
+        choices=NotificationStatus.choices,
+        default=NotificationStatus.REQUESTED,
+    )
+    data_processamento = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -95,3 +105,16 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f'{self.quantity}x {self.event.title}'
+
+
+class ProcessedEvent(models.Model):
+    # Registro de idempotencia para consumidores em modelo at-least-once.
+    event_id = models.CharField(max_length=64, unique=True)
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='processed_event')
+    processed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-processed_at']
+
+    def __str__(self):
+        return f'Evento {self.event_id} processado para pedido #{self.order_id}'

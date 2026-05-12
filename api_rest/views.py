@@ -16,6 +16,7 @@ from .serializers import (
     CartSerializer,
     EventSerializer,
     OrderSerializer,
+    OrderStatusSerializer,
     UpdateCartItemSerializer,
     UserSerializer,
 )
@@ -260,6 +261,16 @@ def list_orders(request, nick):
 
     orders = user.orders.prefetch_related('items__event').order_by('-created_at')
     return Response(OrderSerializer(orders, many=True).data)
+
+
+@api_view(['GET'])
+def order_status(request, order_id):
+    try:
+        order = Order.objects.select_related('user').get(pk=order_id)
+    except Order.DoesNotExist:
+        return Response({'error': 'Pedido nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(OrderStatusSerializer(order).data)
 
 
 def _publish_order_created_event(order_event):
