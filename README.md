@@ -5,7 +5,7 @@
 
   ---
 
-  ## ndice
+  ## Índice
 
   1. [Requisitos](#requisitos)
   2. [Como rodar com Docker](#como-rodar-com-docker)
