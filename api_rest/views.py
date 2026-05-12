@@ -1,4 +1,5 @@
 import logging
+from unittest import result
 
 from django.db import transaction
 from django.db.models import Sum
@@ -15,10 +16,20 @@ from .serializers import (
     AddCartItemSerializer,
     CartSerializer,
     EventSerializer,
-    OrderSerializer,
+OrderSerializer,
     OrderStatusSerializer,
     UpdateCartItemSerializer,
     UserSerializer,
+)
+from .queries.user_queries import (
+    get_all_users_query,
+    get_user_by_nick_query
+)
+
+from .commands.user_commands import (
+    create_user_command,
+    update_user_command,
+    delete_user_command
 )
 
 logger = logging.getLogger(__name__)
@@ -43,12 +54,12 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = UserSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        result, success = create_user_command(request.data)
 
+        if success:
+            return Response(result, status=status.HTTP_201_CREATED)
+
+        return Response(result, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
     # Login simples: valida nickname e senha e devolve os dados publicos do usuario.
@@ -84,10 +95,9 @@ class LoginView(APIView):
 @api_view(['GET'])
 def get_users(request):
     # Rota antiga para listar usuarios; o endpoint principal e /api/users/.
-    users = User.objects.all().order_by('user_nickname')
-    serializer = UserSerializer(users, many=True)
-    return Response(serializer.data)
+   users = get_all_users_query()
 
+   return Response(users)
 
 @api_view(['GET', 'PUT'])
 def get_by_nick(request, nick):
@@ -97,15 +107,16 @@ def get_by_nick(request, nick):
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'GET':
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
+        user_data = get_user_by_nick_query(nick)
 
-    serializer = UserSerializer(user, data=request.data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(user_data)
 
+    result, success = update_user_command(user, request.data)
+
+    if success:
+        return Response(result, status=status.HTTP_202_ACCEPTED)
+
+    return Response(result, status=status.HTTP_400_BAD_REQUEST)
 
 def _get_user_or_404(nick):
     # Pequeno helper para evitar repetir try/except em todas as views por usuario.
