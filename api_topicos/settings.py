@@ -135,6 +135,16 @@ RABBITMQ = {
     'ORDER_CREATED_QUEUE': os.environ.get('RABBITMQ_ORDER_CREATED_QUEUE', 'order.created.notifications'),
 }
 
+REDIS = {
+    'HOST': os.environ.get('REDIS_HOST', 'localhost'),
+    'PORT': int(os.environ.get('REDIS_PORT', '6379')),
+    'DB': int(os.environ.get('REDIS_DB', '0')),
+    'PASSWORD': os.environ.get('REDIS_PASSWORD', 'redissenha123'),
+    'KEY_PREFIX': os.environ.get('REDIS_KEY_PREFIX', 'api_topicos:'),
+    'ITEM_TTL_SECONDS': int(os.environ.get('REDIS_ITEM_TTL_SECONDS', '300')),
+    'LIST_TTL_SECONDS': int(os.environ.get('REDIS_LIST_TTL_SECONDS', '120')),
+}
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -150,6 +160,11 @@ LOGGING = {
             'propagate': False,
         },
         'api_rest.management.commands.consume_order_created': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'api_rest.cache': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,

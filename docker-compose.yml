@@ -17,6 +17,21 @@
 
 services:
 
+  redis:
+      image: redis:7-alpine
+      command: redis-server --requirepass ${REDIS_PASSWORD:-redissenha123}
+      ports:
+        - "6379:6379"
+      volumes:
+        - redis_data:/data
+      networks:
+        - app_network
+      healthcheck:
+        test: ["CMD", "redis-cli", "-a", "redissenha123", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     environment:
@@ -113,6 +128,10 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redissenha123}
 
     # Dependencias: garante que o banco suba ANTES do Django
     # condition: service_healthy = espera o healthcheck do db passar
@@ -121,6 +140,8 @@ services:
       db:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
     # Conecta na mesma rede do banco para comunicacao interna
@@ -140,11 +161,17 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redissenha123}
     depends_on:
       db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      redis:
+        condition: service_healthy  
     networks:
       - app_network
 
@@ -158,6 +185,7 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
+  redis_data:
 
 # ============================================================
 # NETWORKS: Rede interna entre containers
