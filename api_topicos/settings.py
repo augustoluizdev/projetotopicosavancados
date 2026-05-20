@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'channels',
     'api_rest'
 ]
 
@@ -156,3 +157,17 @@ LOGGING = {
         },
     },
 }
+
+ASGI_APPLICATION = 'api_topicos.asgi.application'
+
+
+# WebSocket / Channels
+ASGI_APPLICATION = 'api_topicos.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
+
+CORS_ALLOW_ALL_ORIGINS = True
