@@ -1,5 +1,6 @@
 # Aqui ficam as views da nossa API. As views são responsáveis por receber as requisições, processá-las e retornar uma resposta. Elas são o coração da nossa API, onde a lógica de negócio é implementada.
 
+import logging
 from urllib import request
 
 from django.shortcuts import render
@@ -10,8 +11,10 @@ from django.db.models import Sum
 from django.shortcuts import render
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
 
 from .models import Cart, CartItem, Event, Order, OrderItem, User
 from .serializers import (
@@ -19,6 +22,7 @@ from .serializers import (
     CartSerializer,
     EventSerializer,
     OrderSerializer,
+    OrderStatusSerializer,
     UpdateCartItemSerializer,
     UserSerializer,
 )
@@ -32,11 +36,15 @@ from .serializers import EventSerializer
 
 import json
 
+logger = logging.getLogger(__name__)
+
 class EventViewSet(viewsets.ModelViewSet):
     """ViewSet para Eventos implementando CQRS.
     - Writes (POST, PUT, PATCH, DELETE): Command Side via EventCommandService
     - Reads (GET): Query Side via EventReadModel (desnormalizado)
     """
+    queryset = Event.objects.all().order_by('date')
+    serializer_class = EventSerializer
 
     def list(self, request, *args, **kwargs):
         """GET /api/events/ - Usa Read Model para leitura otimizada"""
@@ -287,6 +295,161 @@ def login(request):
         return Response({'error': 'Senha incorreta.'}, status=status.HTTP_400_BAD_REQUEST)
     data = {'user_nickname':user.user_nickname, 'user_name': user.user_name, 'user_email': user.user_email}
     return Response(data)
+
+
+def _get_user_or_404(nick):
+    try:
+        return User.objects.get(pk=nick)
+    except User.DoesNotExist:
+        return None
+
+
+def _get_or_create_cart(user):
+    return Cart.objects.get_or_create(user=user)[0]
+
+
+def _reserved_quantity_for_event(event, cart_item_id=None):
+    queryset = CartItem.objects.filter(event=event)
+    if cart_item_id is not None:
+        queryset = queryset.exclude(pk=cart_item_id)
+    total = queryset.aggregate(total=Sum('quantity')).get('total')
+    return total or 0
+
+
+def _has_available_tickets(event, quantity, ignored_cart_item_id=None):
+    reserved = _reserved_quantity_for_event(event, ignored_cart_item_id)
+    return quantity + reserved <= event.available_tickets
+
+
+@api_view(['GET'])
+def get_cart(request, nick):
+    user = _get_user_or_404(nick)
+    if not user:
+        return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    cart = _get_or_create_cart(user)
+    return Response(CartSerializer(cart).data)
+
+
+@api_view(['POST'])
+def add_to_cart(request, nick):
+    user = _get_user_or_404(nick)
+    if not user:
+        return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    serializer = AddCartItemSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    cart = _get_or_create_cart(user)
+    event = serializer.validated_data['event']
+    quantity = serializer.validated_data['quantity']
+    cart_item = CartItem.objects.filter(cart=cart, event=event).first()
+    new_quantity = quantity if cart_item is None else cart_item.quantity + quantity
+
+    if not _has_available_tickets(event, new_quantity, cart_item.pk if cart_item else None):
+        return Response(
+            {'error': 'Quantidade indisponivel para este evento.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if cart_item is None:
+        CartItem.objects.create(cart=cart, event=event, quantity=quantity)
+    else:
+        cart_item.quantity = new_quantity
+        cart_item.save(update_fields=['quantity'])
+
+    return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+def cart_item_detail(request, nick, item_id):
+    user = _get_user_or_404(nick)
+    if not user:
+        return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    cart = _get_or_create_cart(user)
+    try:
+        cart_item = cart.items.get(pk=item_id)
+    except CartItem.DoesNotExist:
+        return Response({'error': 'Item do carrinho nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'DELETE':
+        cart_item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = UpdateCartItemSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    quantity = serializer.validated_data['quantity']
+    if not _has_available_tickets(cart_item.event, quantity, cart_item.pk):
+        return Response(
+            {'error': 'Quantidade indisponivel para este evento.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    cart_item.quantity = quantity
+    cart_item.save(update_fields=['quantity'])
+    return Response(CartSerializer(cart).data)
+
+
+@api_view(['POST'])
+def checkout_cart(request, nick):
+    user = _get_user_or_404(nick)
+    if not user:
+        return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    cart = _get_or_create_cart(user)
+    items = list(cart.items.select_related('event'))
+    if not items:
+        return Response({'error': 'O carrinho esta vazio.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        event_ids = [item.event_id for item in items]
+        locked_events = {
+            event.id: event
+            for event in Event.objects.select_for_update().filter(id__in=event_ids)
+        }
+
+        for item in items:
+            event = locked_events[item.event_id]
+            if item.quantity > event.available_tickets:
+                return Response(
+                    {'error': f'Ingressos insuficientes para o evento "{event.title}".'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        order = Order.objects.create(user=user)
+        OrderItem.objects.bulk_create(
+            [
+                OrderItem(order=order, event=locked_events[item.event_id], quantity=item.quantity)
+                for item in items
+            ]
+        )
+        cart.items.all().delete()
+
+    return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+def list_orders(request, nick):
+    user = _get_user_or_404(nick)
+    if not user:
+        return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    orders = user.orders.prefetch_related('items__event').order_by('-created_at')
+    return Response(OrderSerializer(orders, many=True).data)
+
+
+@api_view(['GET'])
+def order_status(request, order_id):
+    try:
+        order = Order.objects.select_related('user').get(pk=order_id)
+    except Order.DoesNotExist:
+        return Response({'error': 'Pedido nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(OrderStatusSerializer(order).data)
 
 
 

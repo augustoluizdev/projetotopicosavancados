@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'channels',
     'api_rest'
 ]
 
@@ -178,5 +179,14 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+CELERY_BROKER_URL = os.environ.get(
+    'CELERY_BROKER_URL',
+    f"redis://{os.environ.get('REDIS_HOST', 'redis')}:{os.environ.get('REDIS_PORT', '6379')}/0",
+)
+CELERY_RESULT_BACKEND = os.environ.get(
+    'CELERY_RESULT_BACKEND',
+    CELERY_BROKER_URL,
+)
 
 CORS_ALLOW_ALL_ORIGINS = True

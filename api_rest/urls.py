@@ -10,6 +10,8 @@ router = DefaultRouter()
 router.register(r'events', EventViewSet)
 
 urlpatterns = [
+    path('auth/register/', views.RegisterView.as_view(), name='register'),
+    path('auth/login/', views.LoginView.as_view(), name='login'),
     path('', views.get_users, name='get_all_users'),
     path('user/<str:nick>/', views.get_by_nick, name='get_by_nick'),
 

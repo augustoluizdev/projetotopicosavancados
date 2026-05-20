@@ -65,4 +65,4 @@ EXPOSE 8000
 # Define o entrypoint: script que roda quando o container inicia
 # O entrypoint.sh executa migrations e depois o comando principal
 # (no caso, `python manage.py runserver 0.0.0.0:8000` do docker-compose)
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/entrypoint.sh"]

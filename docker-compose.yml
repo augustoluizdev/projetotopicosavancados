@@ -133,6 +133,8 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
 
     # Dependencias: garante que o banco suba ANTES do Django
     # condition: service_healthy = espera o healthcheck do db passar
@@ -148,21 +150,6 @@ services:
     # Conecta na mesma rede do banco para comunicacao interna
     networks:
       - app_network
-
-  # ============================================================
-  # SERVICO: Redis (Message Broker para Celery)
-  # ============================================================
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   # ============================================================
   # SERVICO: Celery Worker (Processa tarefas assincronas)
@@ -181,10 +168,13 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SKIP_MIGRATIONS: "True"
     depends_on:
-      redis:
-        condition: service_healthy
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       redis:
         condition: service_healthy
