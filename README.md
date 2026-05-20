@@ -747,7 +747,7 @@ O Django tentou conectar no PostgreSQL antes dele estar pronto. Solucao:
 
 ```bash
 docker-compose down
-docker-compose up --build
+      docker-compose up --build
 ```
 
 O healthcheck no docker-compose.yml ja previne isso, mas se acontecer, reiniciar resolve.

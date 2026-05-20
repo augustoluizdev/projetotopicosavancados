@@ -25,6 +25,12 @@ from .queries.user_queries import (
     get_all_users_query,
     get_user_by_nick_query
 )
+from .queries.event_queries import (
+    get_all_events_query,
+    get_event_by_id_query,
+    invalidate_event_item_cache,
+    invalidate_event_list_cache,
+)
 
 from .commands.user_commands import (
     create_user_command,
@@ -47,6 +53,44 @@ class EventViewSet(viewsets.ModelViewSet):
     # CRUD completo de eventos em /api/events/.
     queryset = Event.objects.all().order_by('date')
     serializer_class = EventSerializer
+
+    def list(self, request, *args, **kwargs):
+        events = get_all_events_query()
+        return Response(events, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            event = get_event_by_id_query(kwargs['pk'])
+        except Event.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(event, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        invalidate_event_list_cache()
+        return response
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        event_id = kwargs['pk']
+        invalidate_event_list_cache()
+        invalidate_event_item_cache(event_id)
+        return response
+
+    def partial_update(self, request, *args, **kwargs):
+        response = super().partial_update(request, *args, **kwargs)
+        event_id = kwargs['pk']
+        invalidate_event_list_cache()
+        invalidate_event_item_cache(event_id)
+        return response
+
+    def destroy(self, request, *args, **kwargs):
+        event_id = kwargs['pk']
+        response = super().destroy(request, *args, **kwargs)
+        invalidate_event_list_cache()
+        invalidate_event_item_cache(event_id)
+        return response
 
 
 class RegisterView(APIView):
