@@ -17,6 +17,18 @@ class User(models.Model):
     def check_password(self, raw_password):
         return check_password(raw_password, self.password)    
 
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    @property
+    def is_active(self):
+        return True
+
     def __str__(self):
         return f'Nickname: {self.user_nickname} - Name: {self.user_name} - Email: {self.user_email} - Age: {self.user_age}'
     

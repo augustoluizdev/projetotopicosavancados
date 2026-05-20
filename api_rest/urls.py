@@ -11,9 +11,17 @@ router.register(r'events', EventViewSet)
 
 urlpatterns = [
     path('', views.get_users, name='get_all_users'),
-    path('auth/register/', views.register, name='register'),
-    path('auth/login/', views.login),
-    path('user/<str:nick>', views.get_by_nick),
-    path('data/', views.user_manager),
-    path('', include(router.urls))
+    path('user/<str:nick>/', views.get_by_nick, name='get_by_nick'),
+
+    # Rotas do fluxo de carrinho, checkout e pedidos.
+    path('cart/<str:nick>/', views.get_cart, name='get_cart'),
+    path('cart/<str:nick>/items/', views.add_to_cart, name='add_to_cart'),
+    path('cart/<str:nick>/items/<int:item_id>/', views.cart_item_detail, name='cart_item_detail'),
+    path('cart/<str:nick>/checkout/', views.checkout_cart, name='checkout_cart'),
+    path('orders/<int:order_id>/detalhe/', views.order_detail_page, name='order_detail_page'),
+    path('orders/<int:order_id>/status/', views.order_status, name='order_status'),
+    path('orders/<str:nick>/', views.list_orders, name='list_orders'),
+
+    # Rotas REST principais: /users/, /events/ e seus detalhes.
+    path('', include(router.urls)),
 ]

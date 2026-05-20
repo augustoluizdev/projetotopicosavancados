@@ -26,6 +26,7 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -53,7 +54,7 @@ ROOT_URLCONF = 'api_topicos.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -124,14 +125,58 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
 ]
 
-# ============================================================
-# CELERY CONFIGURATION (CQRS - Eventual Consistency)
-# ============================================================
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://redis:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://redis:6379/0')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+SIMPLE_JWT = {
+    'USER_ID_FIELD': 'user_nickname',
+    'USER_ID_CLAIM': 'user_nickname',
+}
+
+RABBITMQ = {
+    'HOST': os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
+    'PORT': int(os.environ.get('RABBITMQ_PORT', '5672')),
+    'USER': os.environ.get('RABBITMQ_USER', 'guest'),
+    'PASSWORD': os.environ.get('RABBITMQ_PASSWORD', 'guest'),
+    'ORDER_CREATED_EXCHANGE': os.environ.get('RABBITMQ_ORDER_CREATED_EXCHANGE', 'orders'),
+    'ORDER_CREATED_ROUTING_KEY': os.environ.get('RABBITMQ_ORDER_CREATED_ROUTING_KEY', 'order.created'),
+    'ORDER_CREATED_QUEUE': os.environ.get('RABBITMQ_ORDER_CREATED_QUEUE', 'order.created.notifications'),
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'api_rest.notifications': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'api_rest.management.commands.consume_order_created': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+ASGI_APPLICATION = 'api_topicos.asgi.application'
+
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [
+                (
+                    os.environ.get('REDIS_HOST', '127.0.0.1'),
+                    int(os.environ.get('REDIS_PORT', '6379')),
+                )
+            ],
+        },
+    },
+}
+
+CORS_ALLOW_ALL_ORIGINS = True

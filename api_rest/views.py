@@ -5,14 +5,14 @@ from urllib import request
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 
+from django.db import transaction
+from django.db.models import Sum
+from django.shortcuts import render
+from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
-<<<<<<< Updated upstream
-from .models import User
-from .serializers import UserSerializer
-=======
 from .models import Cart, CartItem, Event, Order, OrderItem, User
 from .serializers import (
     AddCartItemSerializer,
@@ -25,7 +25,6 @@ from .serializers import (
 from .commands import EventCommandService
 from .read_models import EventReadModel
 from .tasks import update_event_read_model
->>>>>>> Stashed changes
 
 from rest_framework import viewsets
 from .models import Event
@@ -34,11 +33,6 @@ from .serializers import EventSerializer
 import json
 
 class EventViewSet(viewsets.ModelViewSet):
-<<<<<<< Updated upstream
-    queryset = Event.objects.all()
-    serializer_class = EventSerializer
-# Aqui ficam as views da nossa API. As views são responsáveis por receber as requisições, processá-las e retornar uma resposta. Elas são o coração da nossa API, onde a lógica de negócio é implementada.
-=======
     """ViewSet para Eventos implementando CQRS.
     - Writes (POST, PUT, PATCH, DELETE): Command Side via EventCommandService
     - Reads (GET): Query Side via EventReadModel (desnormalizado)
@@ -143,9 +137,21 @@ class LoginView(APIView):
             'user_email': user.user_email,
             'user_age': user.user_age,
         }
+
+        try:
+            from rest_framework_simplejwt.tokens import RefreshToken
+        except ImportError:
+            return Response(data, status=status.HTTP_200_OK)
+
+        refresh = RefreshToken.for_user(user)
+        data.update(
+            {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }
+        )
         return Response(data, status=status.HTTP_200_OK)
 
->>>>>>> Stashed changes
 
 @api_view(['GET'])
 def get_users(request):
@@ -299,3 +305,15 @@ def login(request):
 #     data.delete()
 
 
+def order_detail_page(request, order_id):
+    return render(request, 'detalhe_pedido.html', {'order_id': order_id})
+
+
+def _publish_order_created_event(order_event):
+    try:
+        publish_order_created_event(order_event)
+    except Exception:
+        logger.exception(
+            'Failed to publish OrderCreatedEvent for order %s',
+            order_event.order_id,
+        )
