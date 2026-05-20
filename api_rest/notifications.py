@@ -6,6 +6,10 @@ import logging
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+
 from .models import Order, ProcessedEvent
 
 logger = logging.getLogger(__name__)
@@ -59,6 +63,20 @@ def process_order_created_payload(payload: dict) -> str:
             order.status_notificacao = Order.NotificationStatus.NOTIFICATION_SENT
             order.data_processamento = timezone.now()
             order.save(update_fields=['status_notificacao', 'data_processamento'])
+
+            # Envia atualização em tempo real via WebSocket
+            channel_layer = get_channel_layer()
+
+            async_to_sync(channel_layer.group_send)(
+                f'pedido_{order.pk}',
+                {
+                    'type': 'order_status_update',
+                    'order_id': order.pk,
+                    'status': order.status_notificacao,
+                    'timestamp': timezone.now().isoformat(),
+                }
+            )
+
             return Order.NotificationStatus.NOTIFICATION_SENT
     except IntegrityError:
         logger.info(

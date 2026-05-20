@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -9,6 +10,7 @@ from rest_framework.test import APITestCase
 from .models import Cart, Event, Order, ProcessedEvent, User
 from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
+from .queries.event_queries import EVENT_LIST_CACHE_KEY, get_event_item_cache_key
 
 
 # Testes dos modelos: validam regras basicas antes de testar a API.
@@ -166,6 +168,7 @@ class UserAPITests(APITestCase):
 # Testes da API de eventos: garantem que o front consiga criar, listar e editar eventos.
 class EventAPITests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.event_list_url = reverse('event-list')
         self.event = Event.objects.create(
             title='Initial Event',
@@ -178,6 +181,18 @@ class EventAPITests(APITestCase):
 
     def event_detail_url(self, pk):
         return reverse('event-detail', kwargs={'pk': pk})
+
+    def event_payload(self, **overrides):
+        payload = {
+            'title': 'Updated Event',
+            'description': 'Descricao atualizada',
+            'date': (timezone.now() + timedelta(days=15)).isoformat(),
+            'location': 'Auditorio Novo',
+            'address': 'Rua Atualizada, 456',
+            'max_participants': 80,
+        }
+        payload.update(overrides)
+        return payload
 
     def test_list_events(self):
         response = self.client.get(self.event_list_url, format='json')
@@ -200,14 +215,7 @@ class EventAPITests(APITestCase):
         self.assertEqual(response.data['title'], 'Django Meetup')
 
     def test_update_event(self):
-        payload = {
-            'title': 'Updated Event',
-            'description': 'Descricao atualizada',
-            'date': (timezone.now() + timedelta(days=15)).isoformat(),
-            'location': 'Auditorio Novo',
-            'address': 'Rua Atualizada, 456',
-            'max_participants': 80,
-        }
+        payload = self.event_payload()
         response = self.client.put(self.event_detail_url(self.event.pk), payload, format='json')
 
         self.assertEqual(response.status_code, 200)
@@ -218,6 +226,112 @@ class EventAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Event.objects.filter(pk=self.event.pk).exists())
+
+    def test_list_events_cache_miss_then_hit(self):
+        self.assertIsNone(cache.get(EVENT_LIST_CACHE_KEY))
+
+        first_response = self.client.get(self.event_list_url, format='json')
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertIsNotNone(cache.get(EVENT_LIST_CACHE_KEY))
+
+        Event.objects.filter(pk=self.event.pk).update(title='Changed outside cache')
+        second_response = self.client.get(self.event_list_url, format='json')
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.data[0]['title'], 'Initial Event')
+
+    def test_retrieve_event_cache_miss_then_hit(self):
+        cache_key = get_event_item_cache_key(self.event.pk)
+        self.assertIsNone(cache.get(cache_key))
+
+        first_response = self.client.get(self.event_detail_url(self.event.pk), format='json')
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertIsNotNone(cache.get(cache_key))
+
+        Event.objects.filter(pk=self.event.pk).update(title='Changed outside cache')
+        second_response = self.client.get(self.event_detail_url(self.event.pk), format='json')
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(second_response.data['title'], 'Initial Event')
+
+    def test_create_event_invalidates_list_cache(self):
+        self.client.get(self.event_list_url, format='json')
+        self.assertIsNotNone(cache.get(EVENT_LIST_CACHE_KEY))
+
+        response = self.client.post(
+            self.event_list_url,
+            self.event_payload(title='Created Event'),
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(cache.get(EVENT_LIST_CACHE_KEY))
+
+    def test_update_event_invalidates_cache_and_next_read_returns_new_data(self):
+        item_cache_key = get_event_item_cache_key(self.event.pk)
+        self.client.get(self.event_list_url, format='json')
+        self.client.get(self.event_detail_url(self.event.pk), format='json')
+        self.assertIsNotNone(cache.get(EVENT_LIST_CACHE_KEY))
+        self.assertIsNotNone(cache.get(item_cache_key))
+
+        response = self.client.put(
+            self.event_detail_url(self.event.pk),
+            self.event_payload(title='Updated Cached Event'),
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(cache.get(EVENT_LIST_CACHE_KEY))
+        self.assertIsNone(cache.get(item_cache_key))
+
+        read_response = self.client.get(self.event_detail_url(self.event.pk), format='json')
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.data['title'], 'Updated Cached Event')
+        self.assertIsNotNone(cache.get(item_cache_key))
+
+    def test_partial_update_event_invalidates_list_and_item_cache(self):
+        item_cache_key = get_event_item_cache_key(self.event.pk)
+        self.client.get(self.event_list_url, format='json')
+        self.client.get(self.event_detail_url(self.event.pk), format='json')
+
+        response = self.client.patch(
+            self.event_detail_url(self.event.pk),
+            {'title': 'Partially Updated Event'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(cache.get(EVENT_LIST_CACHE_KEY))
+        self.assertIsNone(cache.get(item_cache_key))
+
+        read_response = self.client.get(self.event_detail_url(self.event.pk), format='json')
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertEqual(read_response.data['title'], 'Partially Updated Event')
+
+    def test_delete_event_invalidates_list_and_item_cache(self):
+        item_cache_key = get_event_item_cache_key(self.event.pk)
+        self.client.get(self.event_list_url, format='json')
+        self.client.get(self.event_detail_url(self.event.pk), format='json')
+        self.assertIsNotNone(cache.get(EVENT_LIST_CACHE_KEY))
+        self.assertIsNotNone(cache.get(item_cache_key))
+
+        delete_response = self.client.delete(self.event_detail_url(self.event.pk), format='json')
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertIsNone(cache.get(EVENT_LIST_CACHE_KEY))
+        self.assertIsNone(cache.get(item_cache_key))
+
+        detail_response = self.client.get(self.event_detail_url(self.event.pk), format='json')
+        list_response = self.client.get(self.event_list_url, format='json')
+
+        self.assertEqual(detail_response.status_code, 404)
+        self.assertIsNone(cache.get(item_cache_key))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.data, [])
 
 
 # Testes do fluxo de compra: carrinho, checkout e historico de pedidos.
