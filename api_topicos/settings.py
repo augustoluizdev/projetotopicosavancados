@@ -12,9 +12,11 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from api_rest.logging_utils import ensure_logs_dir
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+LOGS_DIR = ensure_logs_dir(BASE_DIR)
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 
@@ -34,11 +36,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'health_check',
     'api_rest'
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'api_rest.middleware.CorrelationIdMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -148,24 +152,60 @@ REDIS = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'correlation_id': {
+            '()': 'api_rest.logging_utils.CorrelationIdFilter',
+        },
+    },
+    'formatters': {
+        'json': {
+            '()': 'api_rest.logging_utils.StructuredJsonFormatter',
+            'fmt': '%(asctime)s %(levelname)s %(name)s %(message)s %(correlation_id)s',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'json',
+            'filters': ['correlation_id'],
+        },
+        'file': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': str(LOGS_DIR / 'api.log'),
+            'when': 'midnight',
+            'backupCount': 7,
+            'encoding': 'utf-8',
+            'formatter': 'json',
+            'filters': ['correlation_id'],
         },
     },
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
     'loggers': {
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'api.request': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         'api_rest.notifications': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'api_rest.rabbitmq': {
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
         'api_rest.management.commands.consume_order_created': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'api_rest.cache': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },

@@ -9,9 +9,13 @@ def create_user_command(data):
 
     if serializer.is_valid():
         serializer.save()
-        return serializer.data
+        return serializer.data, True
 
-    return serializer.errors
+
+    return serializer.errors, False
+
+
+
 
 
 
@@ -21,9 +25,10 @@ def update_user_command(user, data):
 
     if serializer.is_valid():
         serializer.save()
-        return serializer.data
+        return serializer.data, True
 
-    return serializer.errors
+
+    return serializer.errors, False
 
 
 

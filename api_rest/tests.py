@@ -1,14 +1,22 @@
+import json
 from datetime import datetime, timedelta
 from unittest.mock import patch
+
 
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+
+from health_check.exceptions import ServiceUnavailable
+
+
 from .models import Cart, Event, Order, ProcessedEvent, User
 from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
+
+
 
 
 # Testes dos modelos: validam regras basicas antes de testar a API.
@@ -136,6 +144,7 @@ class UserAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['user_nickname'], 'existing')
         self.assertNotIn('password', response.data)
+        self.assertIn('X-Correlation-ID', response)
 
     def test_login_wrong_password(self):
         payload = {'user_nickname': 'existing', 'password': 'wrong'}
@@ -402,3 +411,59 @@ class NotificationProcessingTests(APITestCase):
         self.assertEqual(response.data['id'], self.order.id)
         self.assertEqual(response.data['user_id'], self.user.user_nickname)
         self.assertEqual(response.data['status_notificacao'], 'notification_sent')
+
+class HealthCheckEndpointTests(APITestCase):
+    @patch('api_rest.health_checks.DatabaseHealthCheck.run')
+    @patch('api_rest.health_checks.RabbitMQHealthCheck.run')
+    @patch('api_rest.health_checks.LogsDirectoryHealthCheck.run')
+    def test_health_endpoint_returns_healthy_report(
+        self,
+        logs_run,
+        rabbitmq_run,
+        database_run,
+    ):
+        response = self.client.get(reverse('health'), HTTP_ACCEPT='application/json')
+        data = json.loads(response.content)
+
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data['status'], 'Healthy')
+        self.assertEqual(data['entries']['database']['status'], 'Healthy')
+        self.assertEqual(data['entries']['rabbitmq']['status'], 'Healthy')
+        self.assertEqual(data['entries']['logs-directory']['status'], 'Healthy')
+        database_run.assert_called_once()
+        rabbitmq_run.assert_called_once()
+        logs_run.assert_called_once()
+
+
+    @patch(
+        'api_rest.health_checks.RabbitMQHealthCheck.run',
+        side_effect=ServiceUnavailable('rabbitmq connection failed'),
+    )
+    @patch('api_rest.health_checks.DatabaseHealthCheck.run')
+    def test_readiness_endpoint_returns_unhealthy_when_dependency_fails(
+        self,
+        database_run,
+        rabbitmq_run,
+    ):
+        response = self.client.get(reverse('health_ready'), HTTP_ACCEPT='application/json')
+        data = json.loads(response.content)
+
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(data['status'], 'Unhealthy')
+        self.assertEqual(data['entries']['database']['status'], 'Healthy')
+        self.assertEqual(data['entries']['rabbitmq']['status'], 'Unhealthy')
+        self.assertIn('rabbitmq connection failed', data['entries']['rabbitmq']['description'])
+        database_run.assert_called_once()
+        rabbitmq_run.assert_called_once()
+
+
+    def test_liveness_endpoint_returns_healthy_without_running_dependency_checks(self):
+        response = self.client.get(reverse('health_live'))
+        data = json.loads(response.content)
+
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data['status'], 'Healthy')
+        self.assertEqual(data['entries'], {})
