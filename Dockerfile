@@ -58,6 +58,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Isso vem DEPOIS do pip install para aproveitar o cache
 COPY . .
 
+# Garante que o entrypoint rode em Linux mesmo quando o projeto foi
+# editado/clonado em Windows.
+RUN chmod +x /app/entrypoint.sh
+
 # Libera a porta 8000 para comunicacao externa
 # Nao publica a porta (isso e feito no docker-compose.yml)
 EXPOSE 8000
