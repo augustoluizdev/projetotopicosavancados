@@ -26,6 +26,7 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 # Application definition
 
 INSTALLED_APPS = [
+    'django_prometheus',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -35,10 +36,14 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'channels',
-    'api_rest'
+    'health_check',
+    'health_check.db',
+    'health_check.cache',
+    'api_rest.apps.ApiRestConfig',
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -47,6 +52,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
 ROOT_URLCONF = 'api_topicos.urls'
@@ -136,15 +142,54 @@ RABBITMQ = {
     'ORDER_CREATED_QUEUE': os.environ.get('RABBITMQ_ORDER_CREATED_QUEUE', 'order.created.notifications'),
 }
 
+RABBITMQ_RETRY_ATTEMPTS = int(os.environ.get('RABBITMQ_RETRY_ATTEMPTS', '3'))
+RABBITMQ_RETRY_WAIT_SECONDS = float(os.environ.get('RABBITMQ_RETRY_WAIT_SECONDS', '0.5'))
+RABBITMQ_HEALTH_CHECK_ENABLED = os.environ.get('RABBITMQ_HEALTH_CHECK_ENABLED', 'True') == 'True'
+
+CACHE_URL = os.environ.get('CACHE_URL')
+if CACHE_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': CACHE_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'api-topicos-local-cache',
+        }
+    }
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '[{levelname}] {asctime} {name}: {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'standard',
         },
     },
+    'root': {
+        'handlers': ['console'],
+        'level': os.environ.get('LOG_LEVEL', 'INFO'),
+    },
     'loggers': {
+        'api_rest': {
+            'handlers': ['console'],
+            'level': os.environ.get('LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
         'api_rest.notifications': {
             'handlers': ['console'],
             'level': 'INFO',

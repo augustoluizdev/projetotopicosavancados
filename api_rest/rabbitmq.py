@@ -5,6 +5,13 @@ import logging
 
 import pika
 from django.conf import settings
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 
 from .order_events import OrderCreatedEvent
 
@@ -22,12 +29,21 @@ class RabbitMQPublisher:
         self.routing_key = rabbitmq['ORDER_CREATED_ROUTING_KEY']
         self.queue = rabbitmq['ORDER_CREATED_QUEUE']
 
+    @retry(
+        retry=retry_if_exception_type(pika.exceptions.AMQPError),
+        stop=stop_after_attempt(settings.RABBITMQ_RETRY_ATTEMPTS),
+        wait=wait_fixed(settings.RABBITMQ_RETRY_WAIT_SECONDS),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
     def publish_order_created(self, event: OrderCreatedEvent) -> None:
         credentials = pika.PlainCredentials(self.user, self.password)
         parameters = pika.ConnectionParameters(
             host=self.host,
             port=self.port,
             credentials=credentials,
+            blocked_connection_timeout=5,
+            socket_timeout=5,
         )
 
         connection = pika.BlockingConnection(parameters)

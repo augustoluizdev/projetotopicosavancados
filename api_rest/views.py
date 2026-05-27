@@ -1,5 +1,4 @@
 import logging
-from unittest import result
 
 from django.db import transaction
 from django.db.models import Sum
@@ -16,7 +15,7 @@ from .serializers import (
     AddCartItemSerializer,
     CartSerializer,
     EventSerializer,
-OrderSerializer,
+    OrderSerializer,
     OrderStatusSerializer,
     UpdateCartItemSerializer,
     UserSerializer,
@@ -48,6 +47,18 @@ class UserViewSet(viewsets.ModelViewSet):
     lookup_field = 'user_nickname'
     lookup_url_kwarg = 'nick'
 
+    def perform_create(self, serializer):
+        user = serializer.save()
+        logger.info('User created through viewset: %s', user.user_nickname)
+
+    def perform_update(self, serializer):
+        user = serializer.save()
+        logger.info('User updated through viewset: %s', user.user_nickname)
+
+    def perform_destroy(self, instance):
+        logger.info('User deleted through viewset: %s', instance.user_nickname)
+        instance.delete()
+
 
 class EventViewSet(viewsets.ModelViewSet):
     # CRUD completo de eventos em /api/events/.
@@ -56,19 +67,23 @@ class EventViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         events = get_all_events_query()
+        logger.info('Events listed: count=%s', len(events))
         return Response(events, status=status.HTTP_200_OK)
 
     def retrieve(self, request, *args, **kwargs):
         try:
             event = get_event_by_id_query(kwargs['pk'])
         except Event.DoesNotExist:
+            logger.warning('Event not found: id=%s', kwargs['pk'])
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        logger.info('Event retrieved: id=%s', kwargs['pk'])
         return Response(event, status=status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
         invalidate_event_list_cache()
+        logger.info('Event created: id=%s title=%s', response.data.get('id'), response.data.get('title'))
         return response
 
     def update(self, request, *args, **kwargs):
@@ -76,6 +91,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event_id = kwargs['pk']
         invalidate_event_list_cache()
         invalidate_event_item_cache(event_id)
+        logger.info('Event updated: id=%s', event_id)
         return response
 
     def partial_update(self, request, *args, **kwargs):
@@ -83,6 +99,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event_id = kwargs['pk']
         invalidate_event_list_cache()
         invalidate_event_item_cache(event_id)
+        logger.info('Event partially updated: id=%s', event_id)
         return response
 
     def destroy(self, request, *args, **kwargs):
@@ -90,6 +107,7 @@ class EventViewSet(viewsets.ModelViewSet):
         response = super().destroy(request, *args, **kwargs)
         invalidate_event_list_cache()
         invalidate_event_item_cache(event_id)
+        logger.info('Event deleted: id=%s', event_id)
         return response
 
 
@@ -101,8 +119,10 @@ class RegisterView(APIView):
         result, success = create_user_command(request.data)
 
         if success:
+            logger.info('User registered: %s', result.get('user_nickname'))
             return Response(result, status=status.HTTP_201_CREATED)
 
+        logger.warning('User registration rejected: %s', result)
         return Response(result, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
@@ -114,6 +134,7 @@ class LoginView(APIView):
         password = request.data.get('password')
 
         if not nick or not password:
+            logger.warning('Login rejected because nickname or password was missing.')
             return Response(
                 {'error': 'Nickname e senha sao obrigatorios.'},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -122,9 +143,11 @@ class LoginView(APIView):
         try:
             user = User.objects.get(pk=nick)
         except User.DoesNotExist:
+            logger.warning('Login rejected for unknown user: %s', nick)
             return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
         if not user.check_password(password):
+            logger.warning('Login rejected for invalid password: %s', nick)
             return Response({'error': 'Senha incorreta.'}, status=status.HTTP_400_BAD_REQUEST)
 
         data = {
@@ -133,6 +156,7 @@ class LoginView(APIView):
             'user_email': user.user_email,
             'user_age': user.user_age,
         }
+        logger.info('User logged in: %s', nick)
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -158,6 +182,7 @@ def get_by_nick(request, nick):
     result, success = update_user_command(user, request.data)
 
     if success:
+        logger.info('Legacy user update completed: %s', nick)
         return Response(result, status=status.HTTP_202_ACCEPTED)
 
     return Response(result, status=status.HTTP_400_BAD_REQUEST)
@@ -195,6 +220,7 @@ def get_cart(request, nick):
     # Retorna o carrinho atual do usuario, criando um vazio se ele ainda nao existir.
     user = _get_user_or_404(nick)
     if not user:
+        logger.warning('Cart requested for unknown user: %s', nick)
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     cart = _get_or_create_cart(user)
@@ -206,10 +232,12 @@ def add_to_cart(request, nick):
     # Adiciona um evento ao carrinho ou aumenta a quantidade se ele ja existir.
     user = _get_user_or_404(nick)
     if not user:
+        logger.warning('Add to cart rejected for unknown user: %s', nick)
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = AddCartItemSerializer(data=request.data)
     if not serializer.is_valid():
+        logger.warning('Add to cart validation failed for %s: %s', nick, serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     cart = _get_or_create_cart(user)
@@ -219,6 +247,12 @@ def add_to_cart(request, nick):
     new_quantity = quantity if cart_item is None else cart_item.quantity + quantity
 
     if not _has_available_tickets(event, new_quantity, cart_item.pk if cart_item else None):
+        logger.warning(
+            'Add to cart rejected due to unavailable tickets: user=%s event=%s quantity=%s',
+            nick,
+            event.pk,
+            new_quantity,
+        )
         return Response(
             {'error': 'Quantidade indisponivel para este evento.'},
             status=status.HTTP_400_BAD_REQUEST,
@@ -230,6 +264,7 @@ def add_to_cart(request, nick):
         cart_item.quantity = new_quantity
         cart_item.save(update_fields=['quantity'])
 
+    logger.info('Cart item added/updated: user=%s event=%s quantity=%s', nick, event.pk, new_quantity)
     return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
 
 
@@ -247,6 +282,7 @@ def cart_item_detail(request, nick, item_id):
         return Response({'error': 'Item do carrinho nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     if request.method == 'DELETE':
+        logger.info('Cart item removed: user=%s item=%s', nick, item_id)
         cart_item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -263,6 +299,7 @@ def cart_item_detail(request, nick, item_id):
 
     cart_item.quantity = quantity
     cart_item.save(update_fields=['quantity'])
+    logger.info('Cart item quantity updated: user=%s item=%s quantity=%s', nick, item_id, quantity)
     return Response(CartSerializer(cart).data)
 
 
@@ -271,11 +308,13 @@ def checkout_cart(request, nick):
     # Transforma todos os itens do carrinho em um pedido e esvazia o carrinho.
     user = _get_user_or_404(nick)
     if not user:
+        logger.warning('Checkout rejected for unknown user: %s', nick)
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
     cart = _get_or_create_cart(user)
     items = list(cart.items.select_related('event'))
     if not items:
+        logger.warning('Checkout rejected for empty cart: user=%s', nick)
         return Response({'error': 'O carrinho esta vazio.'}, status=status.HTTP_400_BAD_REQUEST)
 
     with transaction.atomic():
@@ -288,6 +327,13 @@ def checkout_cart(request, nick):
         for item in items:
             event = locked_events[item.event_id]
             if item.quantity > event.available_tickets:
+                logger.warning(
+                    'Checkout rejected due to insufficient tickets: user=%s event=%s requested=%s available=%s',
+                    nick,
+                    event.pk,
+                    item.quantity,
+                    event.available_tickets,
+                )
                 return Response(
                     {'error': f'Ingressos insuficientes para o evento "{event.title}".'},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -304,6 +350,7 @@ def checkout_cart(request, nick):
         order_event = build_order_created_event(order)
         transaction.on_commit(lambda: _publish_order_created_event(order_event))
 
+    logger.info('Checkout completed: user=%s order=%s items=%s', nick, order.pk, len(items))
     return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -323,8 +370,10 @@ def order_status(request, order_id):
     try:
         order = Order.objects.select_related('user').get(pk=order_id)
     except Order.DoesNotExist:
+        logger.warning('Order status requested for unknown order: %s', order_id)
         return Response({'error': 'Pedido nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
 
+    logger.info('Order status retrieved: order=%s', order_id)
     return Response(OrderStatusSerializer(order).data)
 
 

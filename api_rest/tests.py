@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import pika
+from django.test import override_settings
 from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
@@ -11,6 +13,7 @@ from .models import Cart, Event, Order, ProcessedEvent, User
 from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
 from .queries.event_queries import EVENT_LIST_CACHE_KEY, get_event_item_cache_key
+from .rabbitmq import RabbitMQPublisher
 
 
 # Testes dos modelos: validam regras basicas antes de testar a API.
@@ -516,3 +519,47 @@ class NotificationProcessingTests(APITestCase):
         self.assertEqual(response.data['id'], self.order.id)
         self.assertEqual(response.data['user_id'], self.user.user_nickname)
         self.assertEqual(response.data['status_notificacao'], 'notification_sent')
+
+
+class ObservabilityAndResilienceTests(APITestCase):
+    @override_settings(RABBITMQ_HEALTH_CHECK_ENABLED=False)
+    def test_health_check_endpoint_is_accessible(self):
+        response = self.client.get('/health/')
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_metrics_endpoint_is_accessible(self):
+        response = self.client.get('/metrics')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'django', response.content)
+
+    @patch('api_rest.rabbitmq.pika.BlockingConnection')
+    def test_rabbitmq_publisher_retries_limited_attempts(self, blocking_connection):
+        blocking_connection.side_effect = pika.exceptions.AMQPConnectionError('rabbit down')
+        publisher = RabbitMQPublisher()
+
+        with self.assertRaises(pika.exceptions.AMQPConnectionError):
+            publisher.publish_order_created(build_order_created_event(self._make_order()))
+
+        self.assertEqual(blocking_connection.call_count, 3)
+
+    def _make_order(self):
+        user = User.objects.create(
+            user_nickname='retrybuyer',
+            user_name='Retry Buyer',
+            user_email='retrybuyer@example.com',
+            user_age=33,
+            password='hashed-password',
+        )
+        event = Event.objects.create(
+            title='Retry Summit',
+            description='Evento para teste de retry',
+            date=timezone.now() + timedelta(days=3),
+            location='Sala 2',
+            address='Rua Retry, 10',
+            max_participants=20,
+        )
+        order = Order.objects.create(user=user)
+        order.items.create(event=event, quantity=1)
+        return order
