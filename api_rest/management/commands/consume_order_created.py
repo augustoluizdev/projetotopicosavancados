@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 import pika
 from django.conf import settings
@@ -24,7 +25,7 @@ class Command(BaseCommand):
             credentials=credentials,
         )
 
-        connection = pika.BlockingConnection(parameters)
+        connection = self._connect(parameters)
         channel = connection.channel()
         channel.exchange_declare(
             exchange=rabbitmq['ORDER_CREATED_EXCHANGE'],
@@ -59,3 +60,21 @@ class Command(BaseCommand):
             )
         )
         channel.start_consuming()
+
+    def _connect(self, parameters):
+        attempts = int(getattr(settings, 'RABBITMQ_CONSUMER_RETRY_ATTEMPTS', 30))
+        wait_seconds = float(getattr(settings, 'RABBITMQ_CONSUMER_RETRY_WAIT_SECONDS', 2))
+
+        for attempt in range(1, attempts + 1):
+            try:
+                return pika.BlockingConnection(parameters)
+            except pika.exceptions.AMQPConnectionError:
+                if attempt == attempts:
+                    raise
+                logger.warning(
+                    'RabbitMQ unavailable for consumer. Retrying in %s seconds (%s/%s).',
+                    wait_seconds,
+                    attempt,
+                    attempts,
+                )
+                time.sleep(wait_seconds)

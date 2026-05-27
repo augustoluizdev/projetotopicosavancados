@@ -3,12 +3,48 @@ from __future__ import annotations
 import json
 import logging
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .models import Order, ProcessedEvent
 
 logger = logging.getLogger(__name__)
+
+
+def broadcast_order_status_update(
+    order_id,
+    status,
+    status_anterior,
+    alterado_em=None,
+    observacao='',
+) -> dict:
+    alterado_em = alterado_em or timezone.now()
+    payload = {
+        'pedido_id': str(order_id),
+        'status': status,
+        'status_anterior': status_anterior,
+        'alterado_em': alterado_em.isoformat(),
+        'observacao': observacao,
+    }
+    channel_layer = get_channel_layer()
+
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f'pedido_{order_id}',
+            {
+                'type': 'order_status_update',
+                **payload,
+            },
+        )
+    except Exception:
+        logger.exception(
+            'Falha ao transmitir atualizacao em tempo real do pedido %s.',
+            order_id,
+        )
+
+    return payload
 
 
 class NotificationService:
@@ -56,9 +92,19 @@ def process_order_created_payload(payload: dict) -> str:
                 return 'duplicate_discarded'
 
             NotificationService().send_order_created(order, event_id)
+            status_anterior = order.status_notificacao
             order.status_notificacao = Order.NotificationStatus.NOTIFICATION_SENT
             order.data_processamento = timezone.now()
             order.save(update_fields=['status_notificacao', 'data_processamento'])
+
+            broadcast_order_status_update(
+                order_id=order.pk,
+                status=order.status_notificacao,
+                status_anterior=status_anterior,
+                alterado_em=order.data_processamento,
+                observacao='Notificacao enviada ao cliente.',
+            )
+
             return Order.NotificationStatus.NOTIFICATION_SENT
     except IntegrityError:
         logger.info(

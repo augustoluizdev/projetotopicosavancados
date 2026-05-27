@@ -5,7 +5,7 @@
 
   ---
 
-  ## Índice
+  ## ndice
 
   1. [Requisitos](#requisitos)
   2. [Como rodar com Docker](#como-rodar-com-docker)
@@ -404,249 +404,186 @@
 =======
 # projetotopicosavancados
 
-API REST em Django 6 com Django REST Framework, PostgreSQL, Redis, Celery e Django Channels para comunicacao em tempo real via WebSockets.
+API REST para gerenciamento de usurios e eventos, construda com Django 6.0.3 e Django REST Framework 3.16.1.
 
-## Sumario
+---
 
-1. [Visao geral](#visao-geral)
-2. [Arquitetura](#arquitetura)
-3. [Requisitos](#requisitos)
-4. [Configuracao do ambiente](#configuracao-do-ambiente)
-5. [Como rodar com Docker](#como-rodar-com-docker)
-6. [Como testar se funcionou](#como-testar-se-funcionou)
-7. [Endpoints principais](#endpoints-principais)
-8. [Fluxo WebSocket de pedidos](#fluxo-websocket-de-pedidos)
-9. [Testes automatizados](#testes-automatizados)
-10. [Estrutura do projeto](#estrutura-do-projeto)
-11. [Troubleshooting](#troubleshooting)
+## ndice
 
-## Visao geral
+1. [Requisitos](#requisitos)
+2. [Como rodar com Docker](#como-rodar-com-docker)
+3. [Como rodar sem Docker](#como-rodar-sem-docker)
+4. [Endpoints da API](#endpoints-da-api)
+5. [Exemplos de uso](#exemplos-de-uso)
+6. [Variaveis de ambiente](#variaveis-de-ambiente)
+7. [Como a dockerizacao funciona](#como-a-dockerizacao-funciona)
+8. [Estrutura do projeto](#estrutura-do-projeto)
+9. [Troubleshooting](#troubleshooting)
 
-O projeto implementa:
-
-- CRUD de usuarios.
-- CRUD de eventos com read model assincrono via Celery.
-- Fluxo de carrinho e pedidos.
-- Autenticacao simples com retorno de tokens JWT via SimpleJWT.
-- Comunicacao em tempo real por pedido usando Django Channels.
-- Redis como backplane do Channels e broker/result backend do Celery.
-- PostgreSQL como banco principal.
-- RabbitMQ disponivel no ambiente para mensageria da aplicacao.
-
-## Arquitetura
-
-```text
-Navegador / Cliente HTTP
-        |
-        | HTTP / REST
-        v
-web: Django + DRF + Daphne
-        |
-        | ORM
-        v
-db: PostgreSQL
-
-web: Django Channels
-        |
-        | grupos WebSocket / channel layer
-        v
-redis: Redis
-
-web
-        |
-        | tasks Celery
-        v
-worker: Celery
-        |
-        | broker/result backend
-        v
-redis: Redis
-
-rabbitmq: RabbitMQ Management
-```
-
-Servicos do `docker-compose.yml`:
-
-| Servico | Funcao | Porta |
-|---------|--------|-------|
-| `web` | Django, DRF, Daphne, Channels | `8000` |
-| `db` | PostgreSQL 16 | `5432` |
-| `redis` | Channels Redis e Celery broker | `6379` |
-| `rabbitmq` | RabbitMQ + painel de gerenciamento | `5672`, `15672` |
-| `worker` | Celery worker | interna |
+---
 
 ## Requisitos
 
-- Docker Desktop rodando.
-- Git.
-- Postman, Insomnia ou navegador para testes manuais.
+| Obrigatorio | Opcional |
+|-------------|----------|
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Postman ou Insomnia (para testar a API) |
+| Git | |
 
-## Configuracao do ambiente
+Aps instalar o Docker Desktop, certifique-se que ele esta rodando (icone na bandeja do sistema).
 
-Crie um arquivo `.env` na raiz do projeto. O arquivo ja fica ignorado pelo Git.
-
-```env
-SECRET_KEY=django-insecure-dev-websocket-local-only-change-me
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,web
-
-DB_ENGINE=django.db.backends.postgresql
-DB_NAME=api_topicos_db
-DB_USER=postgres
-DB_PASSWORD=postgres123
-DB_HOST=db
-DB_PORT=5432
-
-REDIS_HOST=redis
-REDIS_PORT=6379
-CELERY_BROKER_URL=redis://redis:6379/0
-CELERY_RESULT_BACKEND=redis://redis:6379/0
-
-RABBITMQ_HOST=rabbitmq
-RABBITMQ_PORT=5672
-RABBITMQ_USER=guest
-RABBITMQ_PASSWORD=guest
-RABBITMQ_ORDER_CREATED_EXCHANGE=orders
-RABBITMQ_ORDER_CREATED_ROUTING_KEY=order.created
-RABBITMQ_ORDER_CREATED_QUEUE=order.created.notifications
-```
+---
 
 ## Como rodar com Docker
 
-Na raiz do projeto:
+### Primeira vez
 
 ```bash
-docker compose up --build
+# 1. Clone o repositorio
+git clone https://github.com/augustoluizdev/projetotopicosavancados.git
+cd projetotopicosavancados
+
+# 2. Inicie tudo (constroi a imagem e sobe os containers)
+docker-compose up --build
 ```
 
-Para rodar em segundo plano:
+A API fica disponvel em **http://localhost:8000/api/**
 
-```bash
-docker compose up --build -d
-```
-
-Comandos uteis:
+### Comandos uteis
 
 | Comando | O que faz |
 |---------|-----------|
-| `docker compose ps` | Mostra o status dos containers |
-| `docker compose logs -f web` | Logs do Django/Daphne |
-| `docker compose logs -f worker` | Logs do Celery |
-| `docker compose logs -f redis` | Logs do Redis |
-| `docker compose exec web python manage.py check` | Valida configuracao Django |
-| `docker compose exec web python manage.py migrate` | Roda migrations manualmente |
-| `docker compose down` | Para os containers mantendo volumes |
-| `docker compose down -v` | Para e apaga volumes/banco |
+| `docker-compose up --build` | Constroi e inicia (mostra logs no terminal) |
+| `docker-compose up --build -d` | Constroi e inicia em segundo plano |
+| `docker-compose down` | Para os containers |
+| `docker-compose down -v` | Para os containers e apaga o banco de dados |
+| `docker-compose logs -f` | Mostra os logs em tempo real |
+| `docker-compose logs -f web` | Mostra so os logs do Django |
+| `docker-compose exec web python manage.py test` | Roda os testes |
+| `docker-compose exec web python manage.py createsuperuser` | Cria usuario admin |
+| `docker-compose exec web python manage.py shell` | Abre shell Python do Django |
+| `docker-compose restart` | Reinicia os containers |
 
-Observacao: o `web` roda migrations e collectstatic no entrypoint. O `worker` usa `SKIP_MIGRATIONS=True` para nao disputar migrations com o `web`.
+---
 
-## Como testar se funcionou
+## Como rodar sem Docker
 
-Depois de subir:
-
-```bash
-docker compose ps
-```
-
-Resultado esperado:
-
-- `db` healthy.
-- `redis` healthy.
-- `rabbitmq` healthy.
-- `web` up com porta `8000`.
-- `worker` up.
-
-Teste HTTP rapido:
+Requer Python 3.10+ e PostgreSQL instalados localmente.
 
 ```bash
-curl http://localhost:8000/api/
+# 1. Ambiente virtual
+python -m venv venv
+.\venv\Scripts\Activate.ps1   # Windows PowerShell
+source venv/bin/activate      # Linux/macOS
+
+# 2. Dependencias
+pip install -r requirements.txt
+
+# 3. Configure o .env para apontar para seu PostgreSQL local
+#    ou altere settings.py para usar SQLite
+
+# 4. Migre e rode
+python manage.py migrate
+python manage.py runserver
 ```
 
-Ou abra no navegador:
+Para usar SQLite em vez de PostgreSQL (desenvolvimento local), altere em `api_topicos/settings.py`:
 
-```text
-http://localhost:8000/api/
+```python
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 ```
 
-Teste Django:
+---
 
-```bash
-docker compose exec web python manage.py check
-```
+## Endpoints da API
 
-Teste WebSocket automatizado:
+### Usurios
 
-```bash
-docker compose exec web pytest api_rest/tests/test_websockets.py
-```
+| Metodo | URL | Descricao | Body |
+|--------|-----|-----------|------|
+| GET | `/api/` | Lista todos os usuarios | - |
+| POST | `/api/auth/register/` | Cria novo usuario | ver abaixo |
+| POST | `/api/auth/login/` | Realiza login | ver abaixo |
+| GET | `/api/user/<nick>` | Busca usuario por nickname | - |
+| PUT | `/api/user/<nick>` | Atualiza usuario | ver abaixo |
 
-## Endpoints principais
+### Eventos
 
-### Autenticacao
+| Metodo | URL | Descricao | Body |
+|--------|-----|-----------|------|
+| GET | `/api/events/` | Lista todos os eventos | - |
+| POST | `/api/events/` | Cria novo evento | ver abaixo |
+| GET | `/api/events/<id>/` | Busca evento por ID | - |
+| PUT | `/api/events/<id>/` | Atualiza evento completo | ver abaixo |
+| PATCH | `/api/events/<id>/` | Atualiza evento parcialmente | qualquer campo |
+| DELETE | `/api/events/<id>/` | Deleta evento | - |
+
+### Admin
 
 | Metodo | URL | Descricao |
 |--------|-----|-----------|
-| `POST` | `/api/auth/register/` | Cria usuario |
-| `POST` | `/api/auth/login/` | Faz login e retorna `access` e `refresh` |
+| GET | `/admin/` | Painel administrativo do Django |
 
-Exemplo de cadastro:
+---
+
+## Exemplos de uso
+
+### Criar usuario
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/register/ \
   -H "Content-Type: application/json" \
   -d '{
-    "user_nickname": "cliente1",
-    "user_name": "Cliente Teste",
-    "user_email": "cliente1@email.com",
-    "user_age": 25,
-    "password": "123456"
+    "user_nickname": "pedro",
+    "user_name": "Pedro Fernandes",
+    "user_email": "pedro@email.com",
+    "user_age": 20,
+    "password": "minhasenha123"
   }'
 ```
 
-Exemplo de login:
+### Login
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{
-    "user_nickname": "cliente1",
-    "password": "123456"
+    "user_nickname": "pedro",
+    "password": "minhasenha123"
   }'
 ```
 
-A resposta contem:
+### Listar usuarios
 
-```json
-{
-  "user_nickname": "cliente1",
-  "user_name": "Cliente Teste",
-  "user_email": "cliente1@email.com",
-  "user_age": 25,
-  "access": "TOKEN_ACCESS",
-  "refresh": "TOKEN_REFRESH"
-}
+```bash
+curl http://localhost:8000/api/
 ```
 
-### Usuarios
+### Buscar usuario por nickname
 
-| Metodo | URL | Descricao |
-|--------|-----|-----------|
-| `GET` | `/api/` | Lista usuarios |
-| `GET` | `/api/user/<nick>/` | Busca usuario |
-| `PUT` | `/api/user/<nick>/` | Atualiza usuario |
+```bash
+curl http://localhost:8000/api/user/pedro
+```
 
-### Eventos
+### Atualizar usuario
 
-| Metodo | URL | Descricao |
-|--------|-----|-----------|
-| `GET` | `/api/events/` | Lista eventos pelo read model |
-| `POST` | `/api/events/` | Cria evento e dispara task Celery |
-| `GET` | `/api/events/<id>/` | Busca evento pelo read model |
-| `PUT` | `/api/events/<id>/` | Atualiza evento |
-| `PATCH` | `/api/events/<id>/` | Atualiza parcialmente |
-| `DELETE` | `/api/events/<id>/` | Remove evento |
+```bash
+curl -X PUT http://localhost:8000/api/user/pedro \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_nickname": "pedro",
+    "user_name": "Pedro F. Silva",
+    "user_email": "pedro.novo@email.com",
+    "user_age": 21,
+    "password": "novasenha456"
+  }'
+```
 
-Exemplo:
+### Criar evento
 
 ```bash
 curl -X POST http://localhost:8000/api/events/ \
@@ -654,211 +591,196 @@ curl -X POST http://localhost:8000/api/events/ \
   -d '{
     "title": "Workshop Django",
     "description": "Aula pratica de Django REST Framework",
-    "date": "2026-06-15T14:00:00Z",
-    "location": "Auditorio",
+    "date": "2026-05-15T14:00:00Z",
+    "location": "Auditorio FESP",
     "address": "Rua Exemplo, 123",
     "max_participants": 50
   }'
 ```
 
-### Carrinho e pedidos
-
-| Metodo | URL | Descricao |
-|--------|-----|-----------|
-| `GET` | `/api/cart/<nick>/` | Mostra carrinho do usuario |
-| `POST` | `/api/cart/<nick>/items/` | Adiciona evento ao carrinho |
-| `PUT` | `/api/cart/<nick>/items/<item_id>/` | Atualiza quantidade |
-| `DELETE` | `/api/cart/<nick>/items/<item_id>/` | Remove item |
-| `POST` | `/api/cart/<nick>/checkout/` | Cria pedido |
-| `GET` | `/api/orders/<nick>/` | Lista pedidos do usuario |
-| `GET` | `/api/orders/<order_id>/status/` | Consulta status do pedido |
-| `GET` | `/api/orders/<order_id>/detalhe/` | Tela HTML reativa do pedido |
-
-Adicionar item ao carrinho:
+### Listar eventos
 
 ```bash
-curl -X POST http://localhost:8000/api/cart/cliente1/items/ \
+curl http://localhost:8000/api/events/
+```
+
+### Atualizar evento
+
+```bash
+curl -X PATCH http://localhost:8000/api/events/1/ \
   -H "Content-Type: application/json" \
   -d '{
-    "event_id": 1,
-    "quantity": 2
+    "max_participants": 100
   }'
 ```
 
-Checkout:
+### Deletar evento
 
 ```bash
-curl -X POST http://localhost:8000/api/cart/cliente1/checkout/
+curl -X DELETE http://localhost:8000/api/events/1/
 ```
 
-## Fluxo WebSocket de pedidos
+> **Dica:** Acesse `http://localhost:8000/api/events/` no navegador. O DRF mostra uma interface visual onde voce pode testar GET e POST direto na tela.
 
-### Backend
+---
 
-O WebSocket usa Django Channels:
+## Variaveis de ambiente
 
-- ASGI configurado em `api_topicos/asgi.py`.
-- Rotas WebSocket em `api_rest/routing.py`.
-- Consumer em `api_rest/consumers.py`.
-- Middleware JWT em `api_rest/channels_middleware.py`.
-- Redis Channel Layer em `api_topicos/settings.py`.
+Configure no arquivo `.env` na raiz do projeto:
 
-Rota WebSocket:
+| Variavel | Descricao | Padrao |
+|----------|-----------|--------|
+| `SECRET_KEY` | Chave secreta do Django | django-insecure-dev-key |
+| `DEBUG` | Modo debug (True/False) | True |
+| `ALLOWED_HOSTS` | Hosts permitidos (separados por virgula) | localhost,127.0.0.1 |
+| `DB_ENGINE` | Engine do banco de dados | django.db.backends.postgresql |
+| `DB_NAME` | Nome do banco | api_topicos_db |
+| `DB_USER` | Usuario do banco | postgres |
+| `DB_PASSWORD` | Senha do banco | postgres123 |
+| `DB_HOST` | Host do banco (nome do servico no Docker) | db |
+| `DB_PORT` | Porta do banco | 5432 |
 
-```text
-ws://localhost:8000/ws/orders/<order_id>/?token=<ACCESS_TOKEN>
+---
+
+## Como a dockerizacao funciona
+
+### Arquitetura dos containers
+
+```
++-------------------+          +-------------------+
+|   Container web   |          |   Container db    |
+|                   |          |                   |
+|   Python 3.12     | -------> |   PostgreSQL 16   |
+|   Django 6.0.3    |  rede    |   (Alpine)        |
+|   DRF 3.16.1      | interna  |                   |
+|   Porta 8000      |          |   Porta 5432      |
++-------------------+          +-------------------+
+         |                              |
+         |                              |
+    localhost:8000              Volume: postgres_data
+    (acesso externo)            (dados persistentes)
 ```
 
-Exemplo:
+### Fluxo de inicializacao
 
-```text
-ws://localhost:8000/ws/orders/1/?token=TOKEN_ACCESS
+```
+docker-compose up --build
+        |
+        v
+[Docker constroi a imagem do web]
+  - Baixa Python 3.12-slim
+  - Instala gcc e libpq-dev
+  - Instala dependencias Python (pip install)
+  - Copia o codigo do projeto
+        |
+        v
+[Docker inicia o container db (PostgreSQL)]
+  - Cria o banco "api_topicos_db"
+  - Cria o usuario "postgres"
+  - Healthcheck verifica se esta pronto
+        |
+        v
+[Docker inicia o container web (Django)]
+  - entrypoint.sh roda:
+    1. python manage.py migrate (cria as tabelas)
+    2. python manage.py collectstatic (arquivos estaticos)
+  - Django inicia em 0.0.0.0:8000
+        |
+        v
+[API disponivel em http://localhost:8000/api/]
 ```
 
-O token e lido da query string pelo `JWTAuthMiddleware`. Se o token for valido, o usuario e associado a `scope["user"]`. Se estiver ausente ou invalido, o middleware deixa a conexao como anonima.
+### O que cada arquivo faz
 
-### Payload de notificacao
+**Dockerfile**
+Define como a imagem do Django e construida. Comeca com Python 3.12-slim, instala as dependencias do sistema (gcc, libpq-dev para compilar o psycopg2), instala as dependencias Python e copia o codigo. Usa multi-stage para que o requirements.txt seja copiado antes do codigo, aproveitando o cache do Docker.
 
-Quando o status do pedido muda, a mensagem enviada ao grupo segue este formato:
+**docker-compose.yml**
+Orquestra os dois containers. O servico `db` usa a imagem oficial do PostgreSQL 16 Alpine com um volume para persistir dados. O servico `web` constroi a partir do Dockerfile e depende do `db` (sai quando o banco estiver pronto via healthcheck). Os dois se comunicam pela rede interna `app_network`, onde o Django acessa o PostgreSQL pelo hostname `db`.
 
-```json
-{
-  "pedido_id": "1",
-  "status": "notification_sent",
-  "status_anterior": "requested",
-  "alterado_em": "2026-05-20T02:59:45.000000+00:00",
-  "observacao": "Notificacao enviada ao cliente."
-}
-```
+**entrypoint.sh**
+Roda toda vez que o container do Django inicia. Aplica as migracoes do banco (`migrate`), coleta arquivos estaticos e entao executa o comando principal (`runserver`). O `set -e` garante que o script pare se qualquer comando falhar.
 
-### Tela no navegador
+**.env**
+Contem as variaveis de ambiente lidas pelo Django (`os.environ.get()`) e pelo docker-compose (`${DB_NAME}`, etc.). O arquivo `.env` nunca deve ser commitado no Git (esta no `.gitignore`).
 
-Abra:
+**requirements.txt**
+Lista todas as dependencias Python. Inclui `psycopg2-binary` (driver do PostgreSQL) e `gunicorn` (servidor de produo). O `requirements.txt` e copiado e instalado no Dockerfile.
 
-```text
-http://localhost:8000/api/orders/1/detalhe/?token=TOKEN_ACCESS
-```
-
-A tela fica em `templates/detalhe_pedido.html` e possui:
-
-- banner de conexao em tempo real;
-- card com status atual;
-- data/hora da ultima alteracao;
-- observacao;
-- reconexao automatica com exponential backoff.
-
-Se o banner ficar verde com `Tempo real ativo`, a conexao WebSocket foi aberta.
-
-## Testes automatizados
-
-Rodar todos os testes:
-
-```bash
-docker compose exec web pytest
-```
-
-Rodar somente WebSocket:
-
-```bash
-docker compose exec web pytest api_rest/tests/test_websockets.py
-```
-
-Rodar checagem Django:
-
-```bash
-docker compose exec web python manage.py check
-```
+---
 
 ## Estrutura do projeto
 
-```text
-projetotopicosavancados/
-  Dockerfile
-  docker-compose.yml
-  entrypoint.sh
-  manage.py
-  requirements.txt
-  README.md
-  IMPLEMENTACAO_WEBSOCKET.md
-  pytest.ini
-  templates/
-    detalhe_pedido.html
-  api_topicos/
-    settings.py
-    urls.py
-    asgi.py
-    wsgi.py
-    celery_app.py
-  api_rest/
-    models.py
-    serializers.py
-    views.py
-    urls.py
-    consumers.py
-    routing.py
-    channels_middleware.py
-    notifications.py
-    tasks.py
-    read_models.py
-    commands.py
-    migrations/
-    tests.py
-    tests/
-      test_websockets.py
 ```
+projetotopicosavancados/
+  Dockerfile               # Definicao da imagem Django
+  docker-compose.yml       # Orquestracao dos containers
+  entrypoint.sh            # Script de inicializacao
+  .env                     # Variaveis de ambiente
+  .gitignore               # Arquivos ignorados pelo Git
+  manage.py                # Entry point do Django
+  requirements.txt         # Dependencias Python
+  README.md                # Este arquivo
+
+  api_topicos/             # Configuracao do projeto Django
+    settings.py            # Configuracoes (DB, apps, middleware)
+    urls.py                # Rotas raiz
+    wsgi.py / asgi.py      # Entradas WSGI/ASGI
+
+  api_rest/                # Aplicacao principal
+    models.py              # Modelos User e Event
+    views.py               # Views da API
+    serializers.py         # Serializers (conversao JSON)
+    urls.py                # Rotas da aplicacao
+    admin.py               # Registro no admin
+    tests.py               # Testes unitarios
+    migrations/            # Migraes do banco
+```
+
+---
 
 ## Troubleshooting
 
-### Docker acusa `.env not found`
+### Erro: "connection refused" ao iniciar
 
-Crie o arquivo `.env` na raiz com o conteudo da secao [Configuracao do ambiente](#configuracao-do-ambiente).
-
-### `web` ou `worker` nao sobem
-
-Veja os logs:
+O Django tentou conectar no PostgreSQL antes dele estar pronto. Solucao:
 
 ```bash
-docker compose logs --tail=120 web
-docker compose logs --tail=120 worker
+docker-compose down
+docker-compose up --build
 ```
 
-Depois valide:
+O healthcheck no docker-compose.yml ja previne isso, mas se acontecer, reiniciar resolve.
+
+### Erro: porta 8000 em uso
+
+Outro processo esta usando a porta 8000. Solucao:
 
 ```bash
-docker compose ps
+# Descobrir qual processo
+netstat -ano | findstr :8000
+
+# Matar o processo (substitua PID pelo numero encontrado)
+taskkill /PID <PID> /F
 ```
 
-### Erro `entrypoint.sh: no such file or directory`
+Ou altere a porta no docker-compose.yml: `8001:8000` e acesse `localhost:8001`.
 
-O `Dockerfile` deve chamar o entrypoint com `sh /app/entrypoint.sh`. O script precisa estar com final de linha LF.
+### Erro: porta 5432 em uso
 
-### Erro de migrations concorrentes
+Voce tem PostgreSQL rodando localmente. Pare o servico local ou altere a porta no docker-compose.yml: `5433:5432`.
 
-Somente o `web` deve rodar migrations. O `worker` deve ter:
+### Mudancas no banco nao persistem
 
-```yaml
-SKIP_MIGRATIONS: "True"
-```
+Se rodou `docker-compose down -v`, o volume foi apagado. Use apenas `docker-compose down` para manter os dados.
 
-### Porta 8000 ocupada
-
-Altere a porta no `docker-compose.yml`:
-
-```yaml
-ports:
-  - "8001:8000"
-```
-
-Depois acesse `http://localhost:8001/api/`.
-
-### Resetar banco local
+### Preciso recriar o banco do zero
 
 ```bash
-docker compose down -v
-docker compose up --build
+docker-compose down -v
+docker-compose up --build
 ```
 
-<<<<<<< HEAD
 ### Container nao inicia / erro no build
 
 ```bash
@@ -882,6 +804,3 @@ docker-compose exec web bash          # Shell do container Django
 docker-compose exec db psql -U postgres -d api_topicos_db  # Shell do PostgreSQL
 ```
 >>>>>>> origin/main
-=======
-Isso apaga os volumes `postgres_data`, `rabbitmq_data` e `redis_data`.
->>>>>>> branch-pedro

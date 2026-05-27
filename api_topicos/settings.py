@@ -26,6 +26,7 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -34,6 +35,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
+    'channels',
     'api_rest'
 ]
 
@@ -53,7 +55,7 @@ ROOT_URLCONF = 'api_topicos.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -125,6 +127,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
+SIMPLE_JWT = {
+    'USER_ID_FIELD': 'user_nickname',
+    'USER_ID_CLAIM': 'user_nickname',
+}
+
 RABBITMQ = {
     'HOST': os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
     'PORT': int(os.environ.get('RABBITMQ_PORT', '5672')),
@@ -156,3 +163,31 @@ LOGGING = {
         },
     },
 }
+
+ASGI_APPLICATION = 'api_topicos.asgi.application'
+
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [
+                (
+                    os.environ.get('REDIS_HOST', '127.0.0.1'),
+                    int(os.environ.get('REDIS_PORT', '6379')),
+                )
+            ],
+        },
+    },
+}
+
+CELERY_BROKER_URL = os.environ.get(
+    'CELERY_BROKER_URL',
+    f"redis://{os.environ.get('REDIS_HOST', 'redis')}:{os.environ.get('REDIS_PORT', '6379')}/0",
+)
+CELERY_RESULT_BACKEND = os.environ.get(
+    'CELERY_RESULT_BACKEND',
+    CELERY_BROKER_URL,
+)
+
+CORS_ALLOW_ALL_ORIGINS = True
