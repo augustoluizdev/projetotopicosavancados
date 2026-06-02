@@ -1,4 +1,3 @@
-from api_rest.models import Event
 from api_rest.serializers import EventSerializer
 
 

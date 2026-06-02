@@ -2,6 +2,10 @@
 
 API REST para gerenciamento de usuarios, eventos, carrinho, pedidos e notificacoes, construida com Django 6.0.3 e Django REST Framework 3.16.1.
 
+[![CI](https://github.com/augustoluizdev/projetotopicosavancados/actions/workflows/ci.yml/badge.svg)](https://github.com/augustoluizdev/projetotopicosavancados/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=augustoluizdev_projetotopicosavancados&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=augustoluizdev_projetotopicosavancados)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=augustoluizdev_projetotopicosavancados&metric=coverage)](https://sonarcloud.io/summary/new_code?id=augustoluizdev_projetotopicosavancados)
+
 ## Stack
 
 - Django 6.0.3
@@ -115,10 +119,19 @@ Se quiser usar SQLite localmente, configure `DB_ENGINE=django.db.backends.sqlite
 
 O projeto tem dois workflows em `.github/workflows/`:
 
-- `ci.yml`: instala dependencias, roda `python manage.py check` e executa a suite de testes.
-- `docker-build.yml`: valida se o `Dockerfile` ainda gera imagem com sucesso.
+- `ci.yml`: roda `backend-ci` e `docker-ci` para validar código, testes, coverage e build da imagem.
+- `sonar.yml`: roda a analise do SonarCloud com o mesmo ambiente de testes e cobertura.
 
 Os dois rodam em `push`, `pull_request` e tambem podem ser disparados manualmente com `workflow_dispatch`.
+
+### SonarCloud
+
+O arquivo [`sonar-project.properties`](sonar-project.properties) concentra as configuracoes da analise:
+
+- chave do projeto
+- organizacao do SonarCloud
+- caminhos de cobertura
+- exclusoes de arquivos gerados automaticamente
 
 ### Fluxo de branches
 
@@ -126,8 +139,15 @@ O fluxo recomendado e:
 
 1. Criar uma branch para cada ajuste.
 2. Abrir pull request para a branch de integracao ou para `main`.
-3. Aguardar o CI passar antes do merge.
+3. Aguardar o `Backend CI`, o `Docker CI` e o `Sonar Analysis` passarem antes do merge.
 4. Manter `main` como base estavel do projeto.
+
+Se voce quiser aproximar isso da regra da apostila, proteja `main` no GitHub exigindo pelo menos:
+
+- `CI / Backend CI`
+- `CI / Sonar Analysis`
+
+Como o projeto nao tem frontend, o job `docker-ci` cumpre o papel de validar a camada de build/infraestrutura que a apostila mostra como um job adicional.
 
 Exemplo:
 

@@ -1,4 +1,3 @@
-from api_rest.models import User
 from api_rest.serializers import UserSerializer
 
 

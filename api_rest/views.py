@@ -1,5 +1,4 @@
 import logging
-from unittest import result
 
 from django.db import transaction
 from django.db.models import Sum
@@ -29,7 +28,6 @@ from .queries.user_queries import (
 from .commands.user_commands import (
     create_user_command,
     update_user_command,
-    delete_user_command
 )
 
 logger = logging.getLogger(__name__)

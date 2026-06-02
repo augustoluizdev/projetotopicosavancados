@@ -17,6 +17,10 @@ __pycache__/
 # Logs
 *.log
 logs/
+.coverage
+.coverage.*
+coverage.xml
+.scannerwork/
 
 # Arquivos gerados em produção/collectstatic
 staticfiles/
