@@ -1,8 +1,12 @@
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.utils import timezone
+from django.views.decorators.http import require_safe
 from rest_framework import status, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.permissions import AllowAny
@@ -28,6 +32,18 @@ from .serializers import (
 from .tasks import update_event_read_model
 
 logger = logging.getLogger(__name__)
+
+
+@require_safe
+def version_info(request):
+    environment = 'Development' if settings.DEBUG else 'Production'
+    return JsonResponse(
+        {
+            'version': settings.APP_VERSION,
+            'environment': environment,
+            'build_date': timezone.now().isoformat(),
+        }
+    )
 
 
 class UserViewSet(viewsets.ModelViewSet):

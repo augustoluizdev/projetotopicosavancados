@@ -14,6 +14,7 @@ LOGS_DIR = ensure_logs_dir(BASE_DIR)
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-dev-key-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+APP_VERSION = "0.1.0-dev"
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
