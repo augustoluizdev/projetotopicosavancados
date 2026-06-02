@@ -98,7 +98,7 @@ O repositório tem:
 - `ci.yml`: lint, check, testes com coverage e build Docker.
 - `sonar.yml`: analise no SonarCloud usando `coverage.xml`.
 
-Configure o `SONAR_TOKEN` em `Repository secrets` no GitHub.
+Configure o `SONAR_TOKEN` em `Settings > Secrets and variables > Actions` no GitHub, como um repository secret.
 
 ## Fluxo WebSocket de pedidos
 
