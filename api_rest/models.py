@@ -18,6 +18,18 @@ class User(models.Model):
         # Compara a senha recebida com o hash salvo no banco.
         return check_password(raw_password, self.password)
 
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_anonymous(self):
+        return False
+
+    @property
+    def is_active(self):
+        return True
+
     def __str__(self):
         return f'Nickname: {self.user_nickname} - Name: {self.user_name} - Email: {self.user_email} - Age: {self.user_age}'
 
@@ -36,7 +48,6 @@ class Event(models.Model):
 
     @property
     def sold_tickets(self):
-        # Soma apenas itens de pedidos finalizados para descobrir a ocupacao real.
         sold = (
             self.order_items.filter(order__status=Order.Status.REQUESTED)
             .aggregate(total=models.Sum('quantity'))
@@ -46,12 +57,10 @@ class Event(models.Model):
 
     @property
     def available_tickets(self):
-        # Capacidade restante considerando os ingressos ja comprados.
         return self.max_participants - self.sold_tickets
 
 
 class Cart(models.Model):
-    # Cada usuario tem um unico carrinho ativo.
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='cart')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -61,13 +70,11 @@ class Cart(models.Model):
 
 
 class CartItem(models.Model):
-    # Item do carrinho: um evento e a quantidade desejada.
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='cart_items')
     quantity = models.PositiveIntegerField(default=1)
 
     class Meta:
-        # Evita duplicar o mesmo evento no carrinho; a view apenas atualiza a quantidade.
         unique_together = ('cart', 'event')
 
     def __str__(self):
@@ -75,7 +82,6 @@ class CartItem(models.Model):
 
 
 class Order(models.Model):
-    # Pedido criado no checkout do carrinho.
     class Status(models.TextChoices):
         REQUESTED = 'requested', 'Requested'
 
@@ -98,7 +104,6 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    # Copia os itens do carrinho para manter o historico do pedido.
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     event = models.ForeignKey(Event, on_delete=models.PROTECT, related_name='order_items')
     quantity = models.PositiveIntegerField()
@@ -108,7 +113,6 @@ class OrderItem(models.Model):
 
 
 class ProcessedEvent(models.Model):
-    # Registro de idempotencia para consumidores em modelo at-least-once.
     event_id = models.CharField(max_length=64, unique=True)
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='processed_event')
     processed_at = models.DateTimeField(auto_now_add=True)

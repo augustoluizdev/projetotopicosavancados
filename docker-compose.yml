@@ -50,6 +50,20 @@ services:
       timeout: 10s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # ============================================================
   # SERVICO: Banco de Dados (PostgreSQL 16)
   # ============================================================
@@ -57,6 +71,10 @@ services:
     # Imagem oficial do PostgreSQL 16 na versao Alpine
     # Alpine = versao menor da imagem (~50MB vs ~300MB)
     image: postgres:16-alpine
+
+    # Carrega variaveis de ambiente do arquivo .env
+    env_file:
+      - .env
 
     # Variaveis de ambiente do PostgreSQL
     # O .env do projeto e lido pelo servico web, mas o
@@ -130,8 +148,8 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_DB: 0
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redissenha123}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
 
     # Dependencias: garante que o banco suba ANTES do Django
     # condition: service_healthy = espera o healthcheck do db passar
@@ -148,10 +166,12 @@ services:
     networks:
       - app_network
 
+  # ============================================================
+  # SERVICO: Celery Worker (Processa tarefas assincronas)
+  # ============================================================
   worker:
     build: .
-    entrypoint: python
-    command: manage.py consume_order_created
+    command: celery -A api_topicos worker -l info
     volumes:
       - .:/app
     env_file:
@@ -163,15 +183,16 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_DB: 0
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redissenha123}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SKIP_MIGRATIONS: "True"
     depends_on:
       db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       redis:
-        condition: service_healthy  
+        condition: service_healthy
     networks:
       - app_network
 

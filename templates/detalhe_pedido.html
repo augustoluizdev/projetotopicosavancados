@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pedido {{ order_id }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-zinc-950 text-zinc-100">
+    <main class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        <div id="connectionBanner" class="rounded-md border border-amber-300/30 bg-amber-500 px-4 py-3 text-sm font-semibold text-zinc-950 shadow-lg shadow-amber-950/20">
+            Reconectando...
+        </div>
+
+        <section class="mt-8 grid flex-1 place-items-center">
+            <article class="w-full max-w-2xl rounded-lg border border-zinc-800 bg-zinc-900 p-6 shadow-2xl shadow-black/30">
+                <div class="flex flex-col gap-2 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-zinc-400">Pedido</p>
+                        <h1 id="pedidoId" class="mt-1 text-3xl font-bold tracking-normal text-white">#{{ order_id }}</h1>
+                    </div>
+                    <span id="statusBadge" class="inline-flex w-fit items-center rounded-md border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-sm font-semibold text-sky-200">
+                        Aguardando atualizacao
+                    </span>
+                </div>
+
+                <dl class="mt-6 grid gap-5 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-400">Status atual</dt>
+                        <dd id="statusAtual" class="mt-1 text-2xl font-semibold text-white">Aguardando atualizacao</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-400">Status anterior</dt>
+                        <dd id="statusAnterior" class="mt-1 text-lg font-medium text-zinc-200">-</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-400">Ultima alteracao</dt>
+                        <dd id="alteradoEm" class="mt-1 text-lg font-medium text-zinc-200">-</dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-400">Observacao</dt>
+                        <dd id="observacao" class="mt-1 text-lg font-medium text-zinc-200">Nenhuma observacao recebida.</dd>
+                    </div>
+                </dl>
+            </article>
+        </section>
+    </main>
+
+    <script>
+        const pedidoId = "{{ order_id }}";
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get("token") || window.localStorage.getItem("access_token") || "";
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const banner = document.getElementById("connectionBanner");
+        const statusBadge = document.getElementById("statusBadge");
+        const statusAtual = document.getElementById("statusAtual");
+        const statusAnterior = document.getElementById("statusAnterior");
+        const alteradoEm = document.getElementById("alteradoEm");
+        const observacao = document.getElementById("observacao");
+
+        let socket = null;
+        let reconnectAttempt = 0;
+        let reconnectTimer = null;
+        let closedByPage = false;
+
+        function setConnectionState(state) {
+            banner.className = "rounded-md border px-4 py-3 text-sm font-semibold shadow-lg";
+
+            if (state === "connected") {
+                banner.textContent = "Tempo real ativo";
+                banner.classList.add("border-emerald-300/30", "bg-emerald-500", "text-zinc-950", "shadow-emerald-950/20");
+                return;
+            }
+
+            if (state === "disconnected") {
+                banner.textContent = "Conexao encerrada";
+                banner.classList.add("border-red-300/30", "bg-red-500", "text-white", "shadow-red-950/20");
+                return;
+            }
+
+            banner.textContent = "Reconectando...";
+            banner.classList.add("border-amber-300/30", "bg-amber-500", "text-zinc-950", "shadow-amber-950/20");
+        }
+
+        function formatDate(value) {
+            if (!value) {
+                return "-";
+            }
+
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return value;
+            }
+
+            return new Intl.DateTimeFormat("pt-BR", {
+                dateStyle: "short",
+                timeStyle: "medium",
+            }).format(date);
+        }
+
+        function updateOrder(payload) {
+            statusAtual.textContent = payload.status || "Status desconhecido";
+            statusAnterior.textContent = payload.status_anterior || "-";
+            alteradoEm.textContent = formatDate(payload.alterado_em);
+            observacao.textContent = payload.observacao || "Nenhuma observacao recebida.";
+            statusBadge.textContent = payload.status || "Atualizado";
+            statusBadge.className = "inline-flex w-fit items-center rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-sm font-semibold text-emerald-200";
+        }
+
+        function scheduleReconnect() {
+            if (closedByPage || reconnectTimer) {
+                return;
+            }
+
+            setConnectionState("reconnecting");
+            const delay = Math.min(30000, 1000 * (2 ** reconnectAttempt));
+            reconnectAttempt += 1;
+
+            reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                connect();
+            }, delay);
+        }
+
+        function connect() {
+            const query = token ? `?token=${encodeURIComponent(token)}` : "";
+            socket = new WebSocket(`${protocol}://${window.location.host}/ws/orders/${pedidoId}/${query}`);
+
+            socket.onopen = () => {
+                reconnectAttempt = 0;
+                setConnectionState("connected");
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    updateOrder(JSON.parse(event.data));
+                } catch (error) {
+                    console.error("Payload WebSocket invalido.", error);
+                }
+            };
+
+            socket.onerror = () => {
+                socket.close();
+            };
+
+            socket.onclose = () => {
+                if (closedByPage) {
+                    setConnectionState("disconnected");
+                    return;
+                }
+
+                scheduleReconnect();
+            };
+        }
+
+        window.addEventListener("beforeunload", () => {
+            closedByPage = true;
+            if (socket) {
+                socket.close();
+            }
+        });
+
+        connect();
+    </script>
+</body>
+</html>

@@ -2,7 +2,6 @@ from rest_framework import serializers
 
 from .models import Cart, CartItem, Event, Order, OrderItem, User
 
-
 class UserSerializer(serializers.ModelSerializer):
     # A senha entra na criacao/edicao, mas nunca volta nas respostas da API.
     password = serializers.CharField(write_only=True, required=False, min_length=6)
@@ -41,7 +40,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class EventSerializer(serializers.ModelSerializer):
-    # Campos calculados ajudam o front a mostrar disponibilidade sem nova chamada.
     sold_tickets = serializers.IntegerField(read_only=True)
     available_tickets = serializers.IntegerField(read_only=True)
 
@@ -51,7 +49,6 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class CartItemSerializer(serializers.ModelSerializer):
-    # Na leitura mostramos o evento completo; na escrita recebemos apenas o id.
     event = EventSerializer(read_only=True)
     event_id = serializers.PrimaryKeyRelatedField(
         source='event',
@@ -65,7 +62,6 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 
 class CartSerializer(serializers.ModelSerializer):
-    # Retorna o carrinho com os itens ja detalhados.
     items = CartItemSerializer(many=True, read_only=True)
     user_nickname = serializers.CharField(source='user.user_nickname', read_only=True)
 
@@ -75,18 +71,15 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class AddCartItemSerializer(serializers.Serializer):
-    # Valida o corpo usado para adicionar ingressos ao carrinho.
     event_id = serializers.PrimaryKeyRelatedField(queryset=Event.objects.all(), source='event')
     quantity = serializers.IntegerField(min_value=1)
 
 
 class UpdateCartItemSerializer(serializers.Serializer):
-    # Valida o corpo usado para alterar a quantidade de um item.
     quantity = serializers.IntegerField(min_value=1)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    # Item do pedido sempre sai com o evento completo para facilitar a tela de historico.
     event = EventSerializer(read_only=True)
 
     class Meta:
@@ -95,7 +88,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    # Pedido com os itens comprados e o nickname de quem comprou.
     items = OrderItemSerializer(many=True, read_only=True)
     user_nickname = serializers.CharField(source='user.user_nickname', read_only=True)
 
