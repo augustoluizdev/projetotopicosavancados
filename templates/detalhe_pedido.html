@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Pedido {{ order_id }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .version-footer {
+            position: fixed;
+            right: 12px;
+            bottom: 10px;
+            z-index: 50;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid rgba(113, 113, 122, 0.35);
+            border-radius: 6px;
+            background: rgba(24, 24, 27, 0.88);
+            padding: 5px 8px;
+            color: #a1a1aa;
+            font-size: 11px;
+            line-height: 1.2;
+            backdrop-filter: blur(8px);
+        }
+
+        .version-footer__badge {
+            border-radius: 999px;
+            padding: 2px 6px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .env-development {
+            background: rgba(250, 204, 21, 0.16);
+            color: #fde047;
+        }
+
+        .env-production {
+            background: rgba(34, 197, 94, 0.16);
+            color: #86efac;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-zinc-950 text-zinc-100">
     <main class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
@@ -46,6 +82,11 @@
         </section>
     </main>
 
+    <footer class="version-footer" aria-label="Versao da aplicacao">
+        <span id="appVersion">v...</span>
+        <span id="appEnvironment" class="version-footer__badge env-development">...</span>
+    </footer>
+
     <script>
         const pedidoId = "{{ order_id }}";
         const params = new URLSearchParams(window.location.search);
@@ -57,6 +98,8 @@
         const statusAnterior = document.getElementById("statusAnterior");
         const alteradoEm = document.getElementById("alteradoEm");
         const observacao = document.getElementById("observacao");
+        const appVersion = document.getElementById("appVersion");
+        const appEnvironment = document.getElementById("appEnvironment");
 
         let socket = null;
         let reconnectAttempt = 0;
@@ -105,6 +148,28 @@
             observacao.textContent = payload.observacao || "Nenhuma observacao recebida.";
             statusBadge.textContent = payload.status || "Atualizado";
             statusBadge.className = "inline-flex w-fit items-center rounded-md border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-sm font-semibold text-emerald-200";
+        }
+
+        async function loadVersionInfo() {
+            try {
+                const response = await fetch("/api/v1/version", { cache: "no-store" });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                const environment = data.environment || "Development";
+                const environmentClass = environment === "Production" ? "env-production" : "env-development";
+
+                appVersion.textContent = `v${data.version || "0.1.0-dev"}`;
+                appEnvironment.textContent = environment;
+                appEnvironment.className = `version-footer__badge ${environmentClass}`;
+            } catch (error) {
+                console.error("Nao foi possivel carregar a versao da aplicacao.", error);
+                appVersion.textContent = "v0.1.0-dev";
+                appEnvironment.textContent = "Development";
+                appEnvironment.className = "version-footer__badge env-development";
+            }
         }
 
         function scheduleReconnect() {
@@ -160,6 +225,7 @@
             }
         });
 
+        loadVersionInfo();
         connect();
     </script>
 </body>
