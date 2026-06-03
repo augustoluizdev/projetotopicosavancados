@@ -1,0 +1,24 @@
+{
+  "release-type": "simple",
+  "changelog-sections": [
+    {
+      "type": "feat",
+      "section": "Novas Funcionalidades"
+    },
+    {
+      "type": "fix",
+      "section": "Correções de Bug"
+    },
+    {
+      "type": "perf",
+      "section": "Melhorias de Performance"
+    },
+    {
+      "type": "refactor",
+      "section": "Refatorações de Código"
+    }
+  ],
+  "packages": {
+    ".": {}
+  }
+}
