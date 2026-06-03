@@ -106,4 +106,3 @@ jobs:
             -Dsonar.projectKey=augustoluizdev_projetotopicosavancados
             -Dsonar.organization=augustoluizdev
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.scanner.force-deprecated-java-version=true
