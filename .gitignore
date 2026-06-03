@@ -31,3 +31,7 @@ staticfiles/
 
 # Repositório Git interno adicionado sem querer
 projetotopicosavancados/
+
+# Ferramentas de Lint / JS
+node_modules/
+.husky/_/

@@ -1,0 +1,27 @@
+{
+  "name": "projetotopicosavancados",
+  "version": "1.0.0",
+  "description": "API REST em Django para gerenciamento de usuarios, eventos, carrinho e pedidos, com processamento assincrono, mensageria, observabilidade e comunicacao em tempo real.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/augustoluizdev/projetotopicosavancados.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/augustoluizdev/projetotopicosavancados/issues"
+  },
+  "homepage": "https://github.com/augustoluizdev/projetotopicosavancados#readme",
+  "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "husky": "^9.1.7"
+  }
+}
