@@ -2,101 +2,62 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [ main, develop ]
   pull_request:
-    branches:
-      - main
-      - develop
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ main, develop ]
 
 jobs:
   backend-ci:
-    name: Backend CI
     runs-on: ubuntu-latest
-
-    env:
-      SECRET_KEY: github-actions-secret-key
-      DEBUG: "False"
-      ALLOWED_HOSTS: localhost,127.0.0.1
-      DB_ENGINE: django.db.backends.sqlite3
-      DB_NAME: ":memory:"
-      RABBITMQ_HOST: localhost
-      RABBITMQ_PORT: "5672"
-      RABBITMQ_USER: guest
-      RABBITMQ_PASSWORD: guest
-      REDIS_HOST: localhost
-      REDIS_PORT: "6379"
-      REDIS_DB: "0"
-      REDIS_PASSWORD: redissenha123
-      CELERY_TASK_ALWAYS_EAGER: "True"
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: pip
+          python-version: '3.12'
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install coverage
 
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt coverage
+      - name: Run Tests with Coverage
+        run: |
+          coverage run manage.py test
+          coverage xml
 
-      - name: Run Django tests with coverage
-        run: coverage run manage.py test
-
-      - name: Generate coverage XML
-        run: coverage xml
-
-      - name: Upload coverage report
+      - name: Upload Coverage Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
+          name: coverage-xml
           path: coverage.xml
-          if-no-files-found: error
 
   docker-ci:
-    name: Docker CI
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Create Docker Compose env file
-        run: cp .env.example .env
-
-      - name: Build Docker Compose services
-        run: docker compose build
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker Images
+        run: |
+          if [ -f .env.example ]; then cp .env.example .env; fi
+          docker compose build
 
   sonar-analysis:
-    name: SonarCloud Analysis
+    needs: backend-ci
     runs-on: ubuntu-latest
-    needs:
-      - backend-ci
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download coverage report
+      - name: Download Coverage Artifact
         uses: actions/download-artifact@v4
         with:
-          name: coverage-report
-          path: .
+          name: coverage-xml
 
-      - name: Analyze with SonarCloud
+      - name: SonarQube Cloud Scan
         uses: SonarSource/sonarqube-scan-action@v8.1.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,6 +67,4 @@ jobs:
             -Dsonar.projectKey=augustoluizdev_projetotopicosavancados
             -Dsonar.organization=augustoluizdev
             -Dsonar.python.coverage.reportPaths=coverage.xml
-
-# SonarCloud: desative "Automatic Analysis" no painel do projeto
-# para evitar o conflito: "You are running CI analysis while Automatic Analysis is enabled".
+            -Dsonar.scanner.force-deprecated-java-version=true
