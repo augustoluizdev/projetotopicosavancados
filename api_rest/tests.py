@@ -1,12 +1,19 @@
 import json
 from datetime import datetime, timedelta
+from unittest import IsolatedAsyncioTestCase
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
+from asgiref.sync import sync_to_async
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -24,6 +31,8 @@ from .permissions import (
     IsOwnerOrAdmin,
     IsOwnerOrReadOnly,
 )
+from .channels_middleware import JWTAuthMiddleware
+from .authentication import JWTAuthentication, _extract_user_identifier, get_user_from_token
 
 
 def build_access_token(user):
@@ -125,6 +134,29 @@ class UserAPITests(APITestCase):
         self.assertEqual(response.data['user_nickname'], 'existing')
         self.assertNotIn('password', response.data)
 
+    def test_get_users_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.get(self.user_list_url, format='json')
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_get_users_returns_list(self):
+        admin = User.objects.create(
+            user_nickname='adminlist',
+            user_name='Admin List',
+            user_email='adminlist@example.com',
+            user_age=40,
+            is_admin=True,
+            password='hashed-password',
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(admin)}')
+
+        response = self.client.get(self.user_list_url, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.data, list)
+
     def test_get_user_by_nickname(self):
         response = self.client.get(self.user_detail_url('existing'), format='json')
         self.assertEqual(response.status_code, 200)
@@ -181,6 +213,22 @@ class UserAPITests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('error', response.data)
 
+    def test_login_requires_nickname_and_password(self):
+        response = self.client.post(self.login_url, {'user_nickname': 'existing'}, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error'], 'Nickname e senha sao obrigatorios.')
+
+    def test_login_returns_not_found_for_unknown_user(self):
+        response = self.client.post(
+            self.login_url,
+            {'user_nickname': 'missing-user', 'password': 'secret'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data['error'], 'Usuario nao encontrado.')
+
     def test_update_user(self):
         payload = {
             'user_nickname': 'existing',
@@ -233,6 +281,12 @@ class EventAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsInstance(response.data, list)
 
+    def test_retrieve_missing_event(self):
+        response = self.client.get(self.event_detail_url(9999), format='json')
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data['error'], 'Evento nao encontrado.')
+
     def test_create_event(self):
         payload = {
             'title': 'Django Meetup',
@@ -246,6 +300,11 @@ class EventAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['title'], 'Django Meetup')
+
+    def test_create_event_invalid_payload(self):
+        response = self.client.post(self.event_list_url, {'title': 'Invalido'}, format='json')
+
+        self.assertEqual(response.status_code, 400)
 
     def test_non_admin_cannot_create_event(self):
         user = User.objects.create(
@@ -282,6 +341,16 @@ class EventAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['title'], 'Updated Event')
+
+    def test_partial_update_event(self):
+        response = self.client.patch(
+            self.event_detail_url(self.event.pk),
+            {'title': 'Patched Event'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['title'], 'Patched Event')
 
     def test_delete_event(self):
         response = self.client.delete(self.event_detail_url(self.event.pk), format='json')
@@ -383,6 +452,44 @@ class TicketPurchaseFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['error'], 'O carrinho esta vazio.')
+
+    def test_get_cart_returns_404_for_missing_user(self):
+        response = self.client.get(reverse('get_cart', kwargs={'nick': 'missing-user'}), format='json')
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_update_cart_item_and_remove_it(self):
+        add_url = reverse('add_to_cart', kwargs={'nick': self.user.user_nickname})
+        add_response = self.client.post(
+            add_url,
+            {'event_id': self.event.id, 'quantity': 1},
+            format='json',
+        )
+        item_id = add_response.data['items'][0]['id']
+        detail_url = reverse(
+            'cart_item_detail',
+            kwargs={'nick': self.user.user_nickname, 'item_id': item_id},
+        )
+
+        update_response = self.client.put(detail_url, {'quantity': 2}, format='json')
+        delete_response = self.client.delete(detail_url, format='json')
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.data['items'][0]['quantity'], 2)
+        self.assertEqual(delete_response.status_code, 204)
+
+    def test_checkout_returns_error_when_stock_changes(self):
+        add_url = reverse('add_to_cart', kwargs={'nick': self.user.user_nickname})
+        checkout_url = reverse('checkout_cart', kwargs={'nick': self.user.user_nickname})
+        self.client.post(add_url, {'event_id': self.event.id, 'quantity': 2}, format='json')
+
+        self.event.max_participants = 1
+        self.event.save(update_fields=['max_participants'])
+
+        response = self.client.post(checkout_url, {}, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Ingressos insuficientes', response.data['error'])
 
 
 class OrderCreatedEventTests(TestCase):
@@ -714,3 +821,153 @@ class ApiDocumentationTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse('openapi-schema'))
+
+
+class JWTAuthMiddlewareTests(IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.receive = AsyncMock()
+        self.send = AsyncMock()
+
+    async def test_sets_authenticated_user_from_token(self):
+        captured_scope = {}
+
+        async def app(scope, receive, send):
+            captured_scope.update(scope)
+            return 'ok'
+
+        middleware = JWTAuthMiddleware(app)
+        user = SimpleNamespace(is_authenticated=True, user_nickname='socketbuyer')
+
+        with patch('api_rest.channels_middleware.get_user_from_jwt', new=AsyncMock(return_value=user)):
+            result = await middleware(
+                {'query_string': b'token=jwt-token'},
+                self.receive,
+                self.send,
+            )
+
+        self.assertEqual(result, 'ok')
+        self.assertEqual(captured_scope['user'], user)
+
+    async def test_keeps_anonymous_user_when_token_is_missing(self):
+        captured_scope = {}
+
+        async def app(scope, receive, send):
+            captured_scope.update(scope)
+            return 'ok'
+
+        middleware = JWTAuthMiddleware(app)
+        result = await middleware({}, self.receive, self.send)
+
+        self.assertEqual(result, 'ok')
+        self.assertFalse(captured_scope['user'].is_authenticated)
+
+    def test_get_token_returns_first_query_param_value(self):
+        middleware = JWTAuthMiddleware(AsyncMock())
+
+        self.assertEqual(middleware._get_token({'query_string': b'token=abc&token=def'}), 'abc')
+        self.assertIsNone(middleware._get_token({'query_string': b''}))
+
+
+class CreateAdminUserCommandTests(TestCase):
+    def test_promotes_existing_user_to_admin(self):
+        user = User.objects.create(
+            user_nickname='existing-admin',
+            user_name='Existing User',
+            user_email='existing@example.com',
+            user_age=30,
+            is_admin=False,
+            password='hashed-password',
+        )
+
+        call_command('create_admin_user', 'existing-admin')
+
+        user.refresh_from_db()
+        self.assertTrue(user.is_admin)
+
+    def test_creates_new_admin_user(self):
+        call_command(
+            'create_admin_user',
+            'new-admin',
+            email='new-admin@example.com',
+            name='New Admin',
+            age=32,
+            password='strong-password',
+        )
+
+        user = User.objects.get(user_nickname='new-admin')
+        self.assertTrue(user.is_admin)
+        self.assertEqual(user.user_email, 'new-admin@example.com')
+        self.assertTrue(user.check_password('strong-password'))
+
+    def test_requires_fields_when_creating_new_admin(self):
+        with self.assertRaises(CommandError):
+            call_command('create_admin_user', 'invalid-admin')
+
+
+class JWTAuthenticationTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.authentication = JWTAuthentication()
+
+    def test_extract_user_identifier_checks_supported_fields(self):
+        self.assertEqual(_extract_user_identifier({'user_id': '123'}), '123')
+        self.assertEqual(_extract_user_identifier({'sub': 'subject'}), 'subject')
+        self.assertIsNone(_extract_user_identifier({'unknown': 'value'}))
+
+    def test_get_user_from_token_returns_existing_user(self):
+        user = User.objects.create(
+            user_nickname='token-user',
+            user_name='Token User',
+            user_email='token@example.com',
+            user_age=26,
+            password='hashed-password',
+        )
+        token = str(RefreshToken.for_user(user).access_token)
+
+        resolved_user = get_user_from_token(token)
+
+        self.assertEqual(resolved_user.pk, user.pk)
+
+    def test_get_user_from_token_raises_for_invalid_or_unknown_user(self):
+        with self.assertRaises(AuthenticationFailed):
+            get_user_from_token('invalid-token')
+
+        ghost = User.objects.create(
+            user_nickname='ghost',
+            user_name='Ghost',
+            user_email='ghost@example.com',
+            user_age=20,
+            password='hashed-password',
+        )
+        token = str(RefreshToken.for_user(ghost).access_token)
+        ghost.delete()
+
+        with self.assertRaises(AuthenticationFailed):
+            get_user_from_token(token)
+
+    def test_authenticate_handles_missing_non_bearer_and_invalid_headers(self):
+        request = Request(self.factory.get('/api/users/'))
+        self.assertIsNone(self.authentication.authenticate(request))
+
+        request = Request(self.factory.get('/api/users/', HTTP_AUTHORIZATION='Basic abc'))
+        self.assertIsNone(self.authentication.authenticate(request))
+
+        request = Request(self.factory.get('/api/users/', HTTP_AUTHORIZATION='Bearer too many parts'))
+        with self.assertRaises(AuthenticationFailed):
+            self.authentication.authenticate(request)
+
+    def test_authenticate_returns_user_and_token(self):
+        user = User.objects.create(
+            user_nickname='auth-user',
+            user_name='Auth User',
+            user_email='auth@example.com',
+            user_age=24,
+            password='hashed-password',
+        )
+        token = str(RefreshToken.for_user(user).access_token)
+        request = Request(self.factory.get('/api/users/', HTTP_AUTHORIZATION=f'Bearer {token}'))
+
+        authenticated_user, raw_token = self.authentication.authenticate(request)
+
+        self.assertEqual(authenticated_user.pk, user.pk)
+        self.assertEqual(raw_token, token)

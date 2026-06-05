@@ -72,3 +72,82 @@ async def test_assinar_pedido_deve_receber_notificacao_status_atualizado():
         assert response == payload
     finally:
         await communicator.disconnect()
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+async def test_conexao_sem_token_deve_ser_fechada():
+    communicator = WebsocketCommunicator(application, '/ws/orders/999/')
+
+    connected, close_code = await communicator.connect(timeout=5)
+
+    assert not connected
+    assert close_code == 4401
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+async def test_conexao_deve_falhar_quando_pedido_nao_existe():
+    @database_sync_to_async
+    def create_user():
+        user = User.objects.create(
+            user_nickname='missingorderbuyer',
+            user_name='Missing Order Buyer',
+            user_email='missingorder@example.com',
+            user_age=31,
+            password='hashed-password',
+        )
+        return user
+
+    user = await create_user()
+    token = str(RefreshToken.for_user(user).access_token)
+    communicator = WebsocketCommunicator(application, f'/ws/orders/999/?token={token}')
+
+    connected, close_code = await communicator.connect(timeout=5)
+
+    assert not connected
+    assert close_code == 4404
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+async def test_conexao_deve_falhar_para_usuario_sem_permissao_no_pedido():
+    @database_sync_to_async
+    def create_order_fixture():
+        owner = User.objects.create(
+            user_nickname='orderowner',
+            user_name='Order Owner',
+            user_email='owner@example.com',
+            user_age=30,
+            password='hashed-password',
+        )
+        stranger = User.objects.create(
+            user_nickname='stranger',
+            user_name='Stranger User',
+            user_email='stranger@example.com',
+            user_age=27,
+            password='hashed-password',
+        )
+        event = Event.objects.create(
+            title='Private Websocket Event',
+            description='Evento privado',
+            date=timezone.now(),
+            location='Online',
+            address='Internet',
+            max_participants=10,
+        )
+        order = Order.objects.create(user=owner)
+        order.items.create(event=event, quantity=1)
+        return stranger, order
+
+    stranger, order = await create_order_fixture()
+    token = str(RefreshToken.for_user(stranger).access_token)
+    communicator = WebsocketCommunicator(application, f'/ws/orders/{order.id}/?token={token}')
+
+    connected, close_code = await communicator.connect(timeout=5)
+
+    assert not connected
+    assert close_code == 4403
