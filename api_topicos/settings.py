@@ -100,6 +100,12 @@ SIMPLE_JWT = {
     'USER_ID_CLAIM': 'user_nickname',
 }
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'api_rest.authentication.JWTAuthentication',
+    ],
+}
+
 RABBITMQ = {
     'HOST': os.environ.get('RABBITMQ_HOST', 'rabbitmq'),
     'PORT': int(os.environ.get('RABBITMQ_PORT', '5672')),
@@ -119,6 +125,12 @@ REDIS = {
     'ITEM_TTL_SECONDS': int(os.environ.get('REDIS_ITEM_TTL_SECONDS', '300')),
     'LIST_TTL_SECONDS': int(os.environ.get('REDIS_LIST_TTL_SECONDS', '120')),
 }
+
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', '')
+REDIS_AUTH_PART = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ''
+REDIS_CHANNEL_URL = (
+    f"redis://{REDIS_AUTH_PART}{os.environ.get('REDIS_HOST', '127.0.0.1')}:{os.environ.get('REDIS_PORT', '6379')}/0"
+)
 
 LOGGING = {
     'version': 1,
@@ -189,19 +201,14 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [
-                (
-                    os.environ.get('REDIS_HOST', '127.0.0.1'),
-                    int(os.environ.get('REDIS_PORT', '6379')),
-                )
-            ],
+            'hosts': [REDIS_CHANNEL_URL],
         },
     },
 }
 
 CELERY_BROKER_URL = os.environ.get(
     'CELERY_BROKER_URL',
-    f"redis://{os.environ.get('REDIS_HOST', 'redis')}:{os.environ.get('REDIS_PORT', '6379')}/0",
+    f"redis://{REDIS_AUTH_PART}{os.environ.get('REDIS_HOST', 'redis')}:{os.environ.get('REDIS_PORT', '6379')}/0",
 )
 CELERY_RESULT_BACKEND = os.environ.get(
     'CELERY_RESULT_BACKEND',

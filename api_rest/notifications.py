@@ -28,15 +28,20 @@ def broadcast_order_status_update(
         'alterado_em': alterado_em.isoformat(),
         'observacao': observacao,
     }
-    channel_layer = get_channel_layer()
 
     try:
+        channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             f'pedido_{order_id}',
             {
                 'type': 'order_status_update',
                 **payload,
             },
+        )
+    except TypeError:
+        logger.info(
+            'Canal em tempo real indisponivel para o pedido %s; atualizacao ignorada.',
+            order_id,
         )
     except Exception:
         logger.exception(

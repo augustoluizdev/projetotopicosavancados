@@ -9,6 +9,7 @@ class User(models.Model):
     user_email = models.EmailField(blank=True, unique=True)
     user_age = models.PositiveIntegerField(default=0)
     password = models.CharField(max_length=128)
+    is_admin = models.BooleanField(default=False)
 
     def set_password(self, raw_password):
         # Nunca salvamos a senha pura; o Django gera um hash seguro.

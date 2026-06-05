@@ -3,7 +3,7 @@ from urllib.parse import parse_qs
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 
-from .models import User
+from .authentication import get_user_from_token
 
 
 class JWTAuthMiddleware:
@@ -35,25 +35,6 @@ class JWTAuthMiddleware:
 @database_sync_to_async
 def get_user_from_jwt(token):
     try:
-        from rest_framework_simplejwt.authentication import JWTAuthentication
-        from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-    except ImportError:
-        return AnonymousUser()
-
-    try:
-        jwt_authentication = JWTAuthentication()
-        validated_token = jwt_authentication.get_validated_token(token)
-        payload = getattr(validated_token, 'payload', validated_token)
-        user_identifier = (
-            payload.get('user_nickname')
-            or payload.get('user_id')
-            or payload.get('sub')
-            or payload.get('username')
-        )
-
-        if not user_identifier:
-            return AnonymousUser()
-
-        return User.objects.get(pk=str(user_identifier))
-    except (InvalidToken, TokenError, User.DoesNotExist, ValueError, TypeError):
+        return get_user_from_token(token)
+    except Exception:
         return AnonymousUser()

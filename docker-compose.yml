@@ -134,8 +134,8 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
 
     # Dependencias: garante que o banco suba ANTES do Django
     # condition: service_healthy = espera o healthcheck do db passar
@@ -169,8 +169,8 @@ services:
       RABBITMQ_PASSWORD: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/0
       SKIP_MIGRATIONS: "True"
     depends_on:
       db:

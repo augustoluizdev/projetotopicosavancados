@@ -12,6 +12,7 @@ O projeto implementa:
 
 - CRUD de usuarios.
 - Autenticacao com SimpleJWT.
+- Autorizacao por perfil: admin cria eventos, usuarios acessam apenas proprio perfil, carrinho e pedidos.
 - CRUD de eventos com read model CQRS.
 - Carrinho, checkout e pedidos.
 - Publicacao de evento `OrderCreatedEvent` no RabbitMQ.
@@ -212,6 +213,7 @@ python manage.py runserver
 |--------|------|-----------|
 | `POST` | `/api/auth/register/` | Cadastra usuario |
 | `POST` | `/api/auth/login/` | Autentica e retorna tokens JWT |
+| `Authorization` | `Bearer <access_token>` | Necessario nas rotas protegidas |
 | `GET` | `/api/` | Lista usuarios pela rota legada |
 | `GET` | `/api/users/` | Lista usuarios pelo router DRF |
 | `GET` | `/api/user/<nick>/` | Busca usuario por nickname |
@@ -227,21 +229,21 @@ python manage.py runserver
 | `GET` | `/api/events/` | Lista eventos pelo read model |
 | `POST` | `/api/events/` | Cria evento e agenda atualizacao do read model |
 | `GET` | `/api/events/<id>/` | Busca evento pelo read model |
-| `PUT` | `/api/events/<id>/` | Atualiza evento |
-| `PATCH` | `/api/events/<id>/` | Atualiza evento parcialmente |
-| `DELETE` | `/api/events/<id>/` | Remove evento |
+| `PUT` | `/api/events/<id>/` | Atualiza evento (admin) |
+| `PATCH` | `/api/events/<id>/` | Atualiza evento parcialmente (admin) |
+| `DELETE` | `/api/events/<id>/` | Remove evento (admin) |
 
 ### Carrinho e pedidos
 
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| `GET` | `/api/cart/<nick>/` | Consulta carrinho do usuario |
-| `POST` | `/api/cart/<nick>/items/` | Adiciona item ao carrinho |
-| `PUT` | `/api/cart/<nick>/items/<item_id>/` | Atualiza quantidade do item |
-| `DELETE` | `/api/cart/<nick>/items/<item_id>/` | Remove item do carrinho |
-| `POST` | `/api/cart/<nick>/checkout/` | Cria pedido a partir do carrinho |
-| `GET` | `/api/orders/<nick>/` | Lista pedidos do usuario |
-| `GET` | `/api/orders/<order_id>/status/` | Consulta status de notificacao do pedido |
+| `GET` | `/api/cart/<nick>/` | Consulta carrinho do usuario autenticado |
+| `POST` | `/api/cart/<nick>/items/` | Adiciona item ao carrinho do usuario autenticado |
+| `PUT` | `/api/cart/<nick>/items/<item_id>/` | Atualiza quantidade do item do usuario autenticado |
+| `DELETE` | `/api/cart/<nick>/items/<item_id>/` | Remove item do carrinho do usuario autenticado |
+| `POST` | `/api/cart/<nick>/checkout/` | Cria pedido a partir do carrinho do usuario autenticado |
+| `GET` | `/api/orders/<nick>/` | Lista pedidos do proprio usuario ou do admin |
+| `GET` | `/api/orders/<order_id>/status/` | Consulta status do proprio pedido ou do admin |
 | `GET` | `/api/orders/<order_id>/detalhe/` | Abre tela HTML de acompanhamento |
 
 ### Observabilidade
@@ -322,11 +324,15 @@ Rota WebSocket:
 ws://localhost:8000/ws/orders/<order_id>/?token=<ACCESS_TOKEN>
 ```
 
+O token precisa pertencer ao dono do pedido, ou a um usuario admin.
+
 Tela HTML de teste:
 
 ```text
 http://localhost:8000/api/orders/<order_id>/detalhe/?token=<ACCESS_TOKEN>
 ```
+
+Se o token nao for informado, a tela abre apenas como placeholder e nao conecta no socket.
 
 Payload enviado ao cliente:
 

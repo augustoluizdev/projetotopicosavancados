@@ -8,9 +8,10 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['user_nickname', 'user_name', 'user_email', 'user_age', 'password']
+        fields = ['user_nickname', 'user_name', 'user_email', 'user_age', 'is_admin', 'password']
         extra_kwargs = {
             'password': {'write_only': True},
+            'is_admin': {'read_only': True},
         }
 
     def validate_user_age(self, value):
@@ -31,6 +32,9 @@ class UserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Atualiza campos simples e troca a senha somente quando ela for enviada.
         password = validated_data.pop('password', None)
+        # Impede que usuários normais alterem is_admin
+        if 'is_admin' in validated_data:
+            del validated_data['is_admin']
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if password:

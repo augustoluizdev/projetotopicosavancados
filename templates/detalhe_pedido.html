@@ -226,7 +226,15 @@
         });
 
         loadVersionInfo();
-        connect();
+
+        if (!token) {
+            setConnectionState("disconnected");
+            banner.textContent = "Faça login para acompanhar este pedido.";
+            statusAtual.textContent = "Autenticação necessária";
+            statusBadge.textContent = "Acesso restrito";
+        } else {
+            connect();
+        }
     </script>
 </body>
 </html>

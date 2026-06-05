@@ -1,4 +1,5 @@
 import logging
+import os
 
 from django.conf import settings
 from django.db import transaction
@@ -14,9 +15,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .commands.user_commands import update_user_command
-from .models import Cart, CartItem, Event, Order, OrderItem, User
 from .event_command_service import EventCommandService
+from .models import Cart, CartItem, Event, Order, OrderItem, User
 from .order_events import build_order_created_event
+from .permissions import IsAdminOrReadOnly, IsAuthenticatedUser, IsOwnerOrAdmin
 from .queries.user_queries import get_all_users_query, get_user_by_nick_query
 from .rabbitmq import publish_order_created_event
 from .read_models import EventReadModel
@@ -32,6 +34,24 @@ from .serializers import (
 from .tasks import update_event_read_model
 
 logger = logging.getLogger(__name__)
+
+
+def _is_authenticated_request_user(request):
+    return bool(getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'user_nickname'))
+
+
+def _can_access_user_nick(request, nick):
+    return _is_authenticated_request_user(request) and (
+        request.user.user_nickname == nick or getattr(request.user, 'is_admin', False)
+    )
+
+
+def _schedule_event_read_model_update(event_id):
+    if settings.DEBUG or settings.CELERY_TASK_ALWAYS_EAGER or os.environ.get('PYTEST_CURRENT_TEST'):
+        update_event_read_model.apply(args=[event_id])
+        return
+
+    update_event_read_model.delay(event_id)
 
 
 @require_safe
@@ -51,11 +71,34 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     lookup_field = 'user_nickname'
     lookup_url_kwarg = 'nick'
+    permission_classes = [IsAuthenticatedUser]
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        if self.action == 'list':
+            return [IsAuthenticatedUser()]
+        if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticatedUser(), IsOwnerOrAdmin()]
+        return [IsAuthenticatedUser()]
+
+    def list(self, request, *args, **kwargs):
+        if not _is_authenticated_request_user(request):
+            return Response(
+                {'error': 'Voce precisa estar autenticado.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if getattr(request.user, 'is_admin', False):
+            return super().list(request, *args, **kwargs)
+
+        return Response(UserSerializer(request.user).data)
 
 
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all().order_by('date')
     serializer_class = EventSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
     def list(self, request, *args, **kwargs):
         events = EventReadModel.get_all()
@@ -68,12 +111,18 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(event)
 
     def create(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_admin', False):
+            return Response(
+                {'error': 'Apenas administradores podem criar eventos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = EventSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         event = EventCommandService.create_event(serializer.validated_data)
-        update_event_read_model.delay(event.id)
+        _schedule_event_read_model_update(event.id)
 
         headers = {
             'X-Consistency': 'eventual',
@@ -83,16 +132,34 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(EventSerializer(event).data, status=status.HTTP_201_CREATED, headers=headers)
 
     def update(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_admin', False):
+            return Response(
+                {'error': 'Apenas administradores podem editar eventos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         event = EventCommandService.update_event(kwargs.get('pk'), request.data)
-        update_event_read_model.delay(event.id)
+        _schedule_event_read_model_update(event.id)
         return Response(EventSerializer(event).data)
 
     def partial_update(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_admin', False):
+            return Response(
+                {'error': 'Apenas administradores podem editar eventos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         event = EventCommandService.update_event(kwargs.get('pk'), request.data)
-        update_event_read_model.delay(event.id)
+        _schedule_event_read_model_update(event.id)
         return Response(EventSerializer(event).data)
 
     def destroy(self, request, *args, **kwargs):
+        if not getattr(request.user, 'is_admin', False):
+            return Response(
+                {'error': 'Apenas administradores podem deletar eventos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         EventCommandService.delete_event(kwargs.get('pk'))
         EventReadModel.delete(kwargs.get('pk'))
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -135,6 +202,7 @@ class LoginView(APIView):
             'user_name': user.user_name,
             'user_email': user.user_email,
             'user_age': user.user_age,
+            'is_admin': user.is_admin,
         }
 
         try:
@@ -154,12 +222,27 @@ class LoginView(APIView):
 
 @api_view(['GET'])
 def get_users(request):
-    users = get_all_users_query()
-    return Response(users)
+    if not _is_authenticated_request_user(request):
+        return Response(
+            {'error': 'Voce precisa estar autenticado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if getattr(request.user, 'is_admin', False):
+        users = get_all_users_query()
+        return Response(users)
+
+    return Response(UserSerializer(request.user).data)
 
 
 @api_view(['GET', 'PUT'])
 def get_by_nick(request, nick):
+    if not _can_access_user_nick(request, nick):
+        return Response(
+            {'error': 'Voce so pode acessar seu proprio perfil.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -200,6 +283,12 @@ def _has_available_tickets(event, quantity, ignored_cart_item_id=None):
 
 @api_view(['GET'])
 def get_cart(request, nick):
+    if not _can_access_user_nick(request, nick):
+        return Response(
+            {'error': 'Voce so pode acessar seu proprio carrinho.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -210,6 +299,12 @@ def get_cart(request, nick):
 
 @api_view(['POST'])
 def add_to_cart(request, nick):
+    if not _can_access_user_nick(request, nick):
+        return Response(
+            {'error': 'Voce so pode adicionar ao seu proprio carrinho.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -241,6 +336,12 @@ def add_to_cart(request, nick):
 
 @api_view(['PUT', 'DELETE'])
 def cart_item_detail(request, nick, item_id):
+    if not _can_access_user_nick(request, nick):
+        return Response(
+            {'error': 'Voce so pode acessar seu proprio carrinho.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -273,6 +374,12 @@ def cart_item_detail(request, nick, item_id):
 
 @api_view(['POST'])
 def checkout_cart(request, nick):
+    if not _can_access_user_nick(request, nick):
+        return Response(
+            {'error': 'Voce so pode fazer checkout do seu proprio carrinho.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -313,6 +420,18 @@ def checkout_cart(request, nick):
 
 @api_view(['GET'])
 def list_orders(request, nick):
+    if not _is_authenticated_request_user(request):
+        return Response(
+            {'error': 'Voce precisa estar autenticado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if request.user.user_nickname != nick and not getattr(request.user, 'is_admin', False):
+        return Response(
+            {'error': 'Voce so pode listar seus proprios pedidos.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     user = _get_user_or_404(nick)
     if not user:
         return Response({'error': 'Usuario nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
@@ -327,6 +446,18 @@ def order_status(request, order_id):
         order = Order.objects.select_related('user').get(pk=order_id)
     except Order.DoesNotExist:
         return Response({'error': 'Pedido nao encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not _is_authenticated_request_user(request):
+        return Response(
+            {'error': 'Voce precisa estar autenticado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    if not getattr(request.user, 'is_admin', False) and order.user_id != request.user.user_nickname:
+        return Response(
+            {'error': 'Voce so pode consultar seus proprios pedidos.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     return Response(OrderStatusSerializer(order).data)
 

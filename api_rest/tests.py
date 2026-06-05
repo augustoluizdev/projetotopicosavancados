@@ -7,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 from health_check.exceptions import ServiceUnavailable
@@ -15,6 +16,10 @@ from health_check.exceptions import ServiceUnavailable
 from .models import Cart, Event, Order, ProcessedEvent, User
 from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
+
+
+def build_access_token(user):
+    return str(RefreshToken.for_user(user).access_token)
 
 
 
@@ -97,6 +102,8 @@ class UserAPITests(APITestCase):
         )
         self.user.set_password('secret')
         self.user.save()
+        self.user_token = build_access_token(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.user_token}')
         self.register_url = reverse('register')
         self.login_url = reverse('login')
         self.user_list_url = reverse('users-list')
@@ -107,13 +114,26 @@ class UserAPITests(APITestCase):
     def test_get_users(self):
         response = self.client.get(self.user_list_url, format='json')
         self.assertEqual(response.status_code, 200)
-        self.assertIsInstance(response.data, list)
+        self.assertEqual(response.data['user_nickname'], 'existing')
+        self.assertNotIn('password', response.data)
 
     def test_get_user_by_nickname(self):
         response = self.client.get(self.user_detail_url('existing'), format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['user_nickname'], 'existing')
         self.assertNotIn('password', response.data)
+
+    def test_cannot_get_other_user_profile(self):
+        other_user = User.objects.create(
+            user_nickname='other',
+            user_name='Other',
+            user_email='other@example.com',
+            user_age=22,
+            password='hashed-password',
+        )
+        response = self.client.get(self.user_detail_url(other_user.user_nickname), format='json')
+
+        self.assertEqual(response.status_code, 403)
 
     def test_create_user_success(self):
         payload = {
@@ -175,6 +195,17 @@ class UserAPITests(APITestCase):
 # Testes da API de eventos: garantem que o front consiga criar, listar e editar eventos.
 class EventAPITests(APITestCase):
     def setUp(self):
+        self.admin = User(
+            user_nickname='admin',
+            user_name='Admin',
+            user_email='admin@example.com',
+            user_age=35,
+            is_admin=True,
+        )
+        self.admin.set_password('secret')
+        self.admin.save()
+        self.admin_token = build_access_token(self.admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.admin_token}')
         self.event_list_url = reverse('event-list')
         self.event = Event.objects.create(
             title='Initial Event',
@@ -208,6 +239,28 @@ class EventAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['title'], 'Django Meetup')
 
+    def test_non_admin_cannot_create_event(self):
+        user = User.objects.create(
+            user_nickname='buyer',
+            user_name='Buyer',
+            user_email='buyer@example.com',
+            user_age=28,
+            password='hashed-password',
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(user)}')
+
+        payload = {
+            'title': 'Blocked Event',
+            'description': 'Tentativa de criacao sem admin',
+            'date': (timezone.now() + timedelta(days=10)).isoformat(),
+            'location': 'Auditorio',
+            'address': 'Rua do Evento, 123',
+            'max_participants': 50,
+        }
+        response = self.client.post(self.event_list_url, payload, format='json')
+
+        self.assertEqual(response.status_code, 403)
+
     def test_update_event(self):
         payload = {
             'title': 'Updated Event',
@@ -240,6 +293,7 @@ class TicketPurchaseFlowTests(APITestCase):
         )
         self.user.set_password('secret')
         self.user.save()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(self.user)}')
         self.event = Event.objects.create(
             title='Tech Conference',
             description='Evento de tecnologia',
@@ -365,6 +419,7 @@ class NotificationProcessingTests(APITestCase):
             password='hashed-password',
         )
         self.order = Order.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(self.user)}')
 
     def test_process_order_created_payload_updates_status_and_idempotency(self):
         payload = {
@@ -411,6 +466,20 @@ class NotificationProcessingTests(APITestCase):
         self.assertEqual(response.data['id'], self.order.id)
         self.assertEqual(response.data['user_id'], self.user.user_nickname)
         self.assertEqual(response.data['status_notificacao'], 'notification_sent')
+
+    def test_order_status_forbidden_for_other_user(self):
+        other = User.objects.create(
+            user_nickname='otherbuyer',
+            user_name='Other Buyer',
+            user_email='otherbuyer@example.com',
+            user_age=25,
+            password='hashed-password',
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(other)}')
+
+        response = self.client.get(reverse('order_status', kwargs={'order_id': self.order.id}))
+
+        self.assertEqual(response.status_code, 403)
 
 class HealthCheckEndpointTests(APITestCase):
     @patch('api_rest.health_checks.DatabaseHealthCheck.run')
