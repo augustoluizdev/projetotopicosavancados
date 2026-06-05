@@ -96,6 +96,12 @@ jobs:
           name: coverage-report
           path: .
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarqube-scan-action@v8.1.0
         env:
@@ -106,3 +112,4 @@ jobs:
             -Dsonar.projectKey=augustoluizdev_projetotopicosavancados
             -Dsonar.organization=augustoluizdev
             -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.scanner.skipJreProvisioning=true
