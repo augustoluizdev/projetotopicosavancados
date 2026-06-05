@@ -1,9 +1,10 @@
 import json
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -16,6 +17,13 @@ from health_check.exceptions import ServiceUnavailable
 from .models import Cart, Event, Order, ProcessedEvent, User
 from .notifications import process_order_created_payload
 from .order_events import build_order_created_event
+from .permissions import (
+    IsAdminOrReadOnly,
+    IsAdminUser,
+    IsAuthenticatedUser,
+    IsOwnerOrAdmin,
+    IsOwnerOrReadOnly,
+)
 
 
 def build_access_token(user):
@@ -536,3 +544,173 @@ class HealthCheckEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data['status'], 'Healthy')
         self.assertEqual(data['entries'], {})
+
+
+class PermissionTests(SimpleTestCase):
+    def build_user(self, *, authenticated=False, nickname=None, is_admin=False):
+        user = SimpleNamespace(is_authenticated=authenticated, is_admin=is_admin)
+        if nickname is not None:
+            user.user_nickname = nickname
+        return user
+
+    def build_request(self, method='GET', user=None):
+        return SimpleNamespace(method=method, user=user)
+
+    def test_is_authenticated_user_permission(self):
+        permission = IsAuthenticatedUser()
+
+        self.assertTrue(
+            permission.has_permission(
+                self.build_request(user=self.build_user(authenticated=True, nickname='owner')),
+                None,
+            )
+        )
+        self.assertFalse(permission.has_permission(self.build_request(user=self.build_user()), None))
+
+    def test_is_admin_user_permission(self):
+        permission = IsAdminUser()
+
+        self.assertTrue(
+            permission.has_permission(
+                self.build_request(user=self.build_user(authenticated=True, nickname='admin', is_admin=True)),
+                None,
+            )
+        )
+        self.assertFalse(
+            permission.has_permission(
+                self.build_request(user=self.build_user(authenticated=True, nickname='user', is_admin=False)),
+                None,
+            )
+        )
+
+    def test_is_admin_or_read_only_allows_read_and_restricts_write(self):
+        permission = IsAdminOrReadOnly()
+
+        self.assertTrue(permission.has_permission(self.build_request(method='GET', user=None), None))
+        self.assertFalse(
+            permission.has_permission(
+                self.build_request(method='POST', user=self.build_user(authenticated=True, nickname='user')),
+                None,
+            )
+        )
+        self.assertTrue(
+            permission.has_permission(
+                self.build_request(
+                    method='POST',
+                    user=self.build_user(authenticated=True, nickname='admin', is_admin=True),
+                ),
+                None,
+            )
+        )
+
+    def test_is_owner_or_read_only_supports_admin_owner_and_related_user(self):
+        permission = IsOwnerOrReadOnly()
+        owner = self.build_user(authenticated=True, nickname='owner')
+        admin = self.build_user(authenticated=True, nickname='admin', is_admin=True)
+
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=admin),
+                None,
+                SimpleNamespace(user_nickname='someone'),
+            )
+        )
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user_nickname='owner'),
+            )
+        )
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user=SimpleNamespace(user_nickname='owner')),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=self.build_user(authenticated=False)),
+                None,
+                SimpleNamespace(user_nickname='owner'),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(other='value'),
+            )
+        )
+
+    def test_is_owner_or_admin_supports_user_id_branch(self):
+        permission = IsOwnerOrAdmin()
+        owner = self.build_user(authenticated=True, nickname='owner')
+        admin = self.build_user(authenticated=True, nickname='admin', is_admin=True)
+
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=admin),
+                None,
+                SimpleNamespace(user_id='other'),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=self.build_user(authenticated=False)),
+                None,
+                SimpleNamespace(user_id='owner'),
+            )
+        )
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user=SimpleNamespace(user_nickname='owner')),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user_nickname='other'),
+            )
+        )
+        self.assertTrue(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user_id='owner'),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(user_id='other'),
+            )
+        )
+        self.assertFalse(
+            permission.has_object_permission(
+                self.build_request(user=owner),
+                None,
+                SimpleNamespace(other='value'),
+            )
+        )
+
+
+class ApiDocumentationTests(APITestCase):
+    def test_openapi_endpoint_returns_json_schema(self):
+        response = self.client.get(reverse('openapi-schema'), HTTP_HOST='localhost:8000')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('application/vnd.oai.openapi+json', response['Content-Type'])
+        self.assertEqual(response.data['info']['title'], 'API Topicos Avancados')
+        self.assertIn('/api/', response.data['paths'])
+
+    def test_swagger_page_is_available(self):
+        response = self.client.get(reverse('swagger-ui'), HTTP_HOST='localhost:8000')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('openapi-schema'))

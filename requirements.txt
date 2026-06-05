@@ -15,3 +15,6 @@ djangorestframework-simplejwt
 pytest
 pytest-asyncio
 pytest-django
+PyYAML
+inflection
+uritemplate
